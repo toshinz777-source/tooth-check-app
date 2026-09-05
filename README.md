@@ -33,16 +33,23 @@ Then visit `http://localhost:8000`.
 
 ## Deploy to GitHub Pages
 
-1. Push this repository to GitHub (already done if you're reading this from
-   the repo).
-2. In the repository, go to **Settings → Pages**.
-3. Under **Build and deployment**, set **Source** to "Deploy from a branch".
-4. Choose the branch you want to publish (e.g. `main`) and the `/ (root)`
-   folder, then save.
-5. GitHub Pages will publish the site at
+This repo includes a ready-to-use GitHub Actions workflow
+(`.github/workflows/deploy-pages.yml`) that publishes the app straight from
+the `claude/repository-selection-tooth-check-tsj0f2` branch — no need to
+merge into `main` first.
+
+One-time setup:
+
+1. In the repository, go to **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to "GitHub Actions".
+3. Push to (or re-run the workflow on) `claude/repository-selection-tooth-check-tsj0f2`
+   and the site will publish at
    `https://<username>.github.io/<repository-name>/`.
 
-No build configuration is required since the app is static HTML/CSS/JS.
+If you'd rather deploy from a different branch (e.g. after merging into
+`main`), you can instead set **Source** to "Deploy from a branch" and pick
+that branch's `/ (root)` folder — no build configuration is required either
+way since the app is static HTML/CSS/JS.
 
 ## Disclaimer
 
