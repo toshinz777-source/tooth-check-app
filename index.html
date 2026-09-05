@@ -1,34 +1,92 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ToDo App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="theme-color" content="#2f6fed">
+<title>Tooth Check</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
-  <h1>ToDo</h1>
+<div class="app-shell">
 
-  <form id="todo-form" class="todo-form">
-    <input type="text" id="todo-input" placeholder="やることを入力…" autocomplete="off" required>
-    <button type="submit">追加</button>
-  </form>
-
-  <div class="filters">
-    <button class="filter-btn active" data-filter="all">すべて</button>
-    <button class="filter-btn" data-filter="active">未完了</button>
-    <button class="filter-btn" data-filter="completed">完了済み</button>
+  <div class="disclaimer-bar">
+    This app does not diagnose dental conditions and is not a substitute for a dentist or doctor.
   </div>
 
-  <ul id="todo-list" class="todo-list"></ul>
+  <main class="screen-container">
 
-  <div class="footer">
-    <span id="items-left">0 件残り</span>
-    <button id="clear-completed">完了済みを削除</button>
-  </div>
+    <!-- HOME -->
+    <section id="screen-home" class="screen active">
+      <div class="home-content">
+        <h1 class="app-title">Tooth Check</h1>
+        <p class="subtitle">Check your dental symptoms and see how soon you may need a dentist.</p>
+        <button id="start-check-btn" class="btn-primary btn-large">Start Check</button>
+      </div>
+    </section>
+
+    <!-- QUESTION FLOW -->
+    <section id="screen-question" class="screen">
+      <button id="back-btn" class="back-link" type="button" hidden>&larr; Back</button>
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <p id="progress-label" class="progress-label"></p>
+      <h2 id="question-prompt" class="question-prompt"></h2>
+      <div id="question-options" class="options-container"></div>
+      <button id="question-next-btn" class="btn-primary btn-large" type="button" hidden>Next</button>
+    </section>
+
+    <!-- RESULT -->
+    <section id="screen-result" class="screen">
+      <div id="result-badge" class="result-badge"></div>
+      <h2 id="result-title" class="result-title"></h2>
+      <p id="result-message" class="result-message"></p>
+      <div id="result-urgent" class="urgent-banner" hidden></div>
+      <div id="trend-warning" class="trend-warning" hidden></div>
+      <div class="result-actions">
+        <button id="result-history-btn" class="btn-secondary btn-large" type="button">View History</button>
+        <button id="result-home-btn" class="btn-primary btn-large" type="button">Done</button>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="screen-history" class="screen">
+      <h2 class="screen-title">History</h2>
+      <div id="history-list" class="history-list"></div>
+      <button id="clear-history-btn" class="btn-text" type="button" hidden>Clear All History</button>
+    </section>
+
+    <!-- DENTIST SUMMARY -->
+    <section id="screen-summary" class="screen">
+      <h2 class="screen-title">Dentist Summary</h2>
+      <p class="subtitle">Create a simple summary of your latest symptoms to share with your dentist.</p>
+      <button id="generate-summary-btn" class="btn-primary btn-large" type="button">Create Dentist Summary</button>
+      <pre id="summary-output" class="summary-output" hidden></pre>
+      <button id="copy-summary-btn" class="btn-secondary btn-large" type="button" hidden>Copy to Clipboard</button>
+      <p id="copy-confirm" class="copy-confirm" hidden>Copied to clipboard.</p>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-screen="home" type="button">
+      <span class="nav-icon" aria-hidden="true">&#8962;</span>
+      <span class="nav-label">Home</span>
+    </button>
+    <button class="nav-btn" data-screen="check" type="button">
+      <span class="nav-icon" aria-hidden="true">&#10003;</span>
+      <span class="nav-label">Check</span>
+    </button>
+    <button class="nav-btn" data-screen="history" type="button">
+      <span class="nav-icon" aria-hidden="true">&#128203;</span>
+      <span class="nav-label">History</span>
+    </button>
+    <button class="nav-btn" data-screen="summary" type="button">
+      <span class="nav-icon" aria-hidden="true">&#128196;</span>
+      <span class="nav-label">Summary</span>
+    </button>
+  </nav>
+
 </div>
-
 <script src="app.js"></script>
 </body>
 </html>
