@@ -22,6 +22,10 @@
   --red-text: #c22b3a;
   --red-bg: #ffe9ec;
   --red-border: #f5b8c0;
+
+  --emergency-text: #ffffff;
+  --emergency-bg: #8b1224;
+  --emergency-border: #5c0c18;
 }
 
 html, body {
@@ -249,6 +253,7 @@ input[type="range"] {
 .result-badge.green { background: var(--green-text); }
 .result-badge.yellow { background: var(--yellow-text); }
 .result-badge.red { background: var(--red-text); }
+.result-badge.emergency { background: var(--emergency-bg); }
 
 .result-title {
   font-size: 26px;
@@ -258,6 +263,7 @@ input[type="range"] {
 .result-title.green { color: var(--green-text); }
 .result-title.yellow { color: var(--yellow-text); }
 .result-title.red { color: var(--red-text); }
+.result-title.emergency { color: var(--emergency-bg); }
 
 .result-message {
   font-size: 17px;
@@ -266,15 +272,38 @@ input[type="range"] {
 }
 
 .urgent-banner {
-  background: var(--red-bg);
-  border: 2px solid var(--red-border);
-  color: var(--red-text);
+  background: var(--emergency-bg);
+  border: 2px solid var(--emergency-border);
+  color: var(--emergency-text);
   font-weight: 700;
   font-size: 18px;
   padding: 16px;
   border-radius: 12px;
   margin-bottom: 20px;
   text-align: center;
+}
+
+.urgent-banner ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.photo-signs-banner {
+  background: #eef2fb;
+  border: 2px solid var(--border);
+  color: var(--text);
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
+.photo-signs-banner ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
 }
 
 .trend-warning {
@@ -348,6 +377,20 @@ input[type="range"] {
   background: var(--red-bg);
 }
 
+.history-result.emergency {
+  color: var(--emergency-text);
+  background: var(--emergency-bg);
+}
+
+.history-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-top: 10px;
+}
+
 .history-delete-btn {
   position: absolute;
   top: 12px;
@@ -390,6 +433,152 @@ input[type="range"] {
   color: var(--green-text);
   font-size: 14px;
   margin-top: 12px;
+}
+
+/* Photo Check */
+.camera-tips {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.camera-tips p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.camera-tips p::before {
+  content: "\2713  ";
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.photo-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.photo-action-buttons[hidden] {
+  display: none;
+}
+
+.camera-view-wrapper {
+  margin-bottom: 20px;
+}
+
+.camera-video-frame {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  margin-bottom: 12px;
+}
+
+.camera-video-frame video {
+  width: 100%;
+  display: block;
+  max-height: 60vh;
+}
+
+.camera-guide-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.guide-frame {
+  width: 65%;
+  height: 45%;
+  border: 3px dashed rgba(255, 255, 255, 0.85);
+  border-radius: 50% / 40%;
+}
+
+.camera-error {
+  background: var(--red-bg);
+  border: 2px solid var(--red-border);
+  color: var(--red-text);
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.photo-preview-wrapper {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.photo-preview {
+  width: 100%;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+.keep-photo-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.keep-photo-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.photo-checklist-wrapper {
+  margin-bottom: 20px;
+}
+
+.checklist-title {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+.subtitle.small {
+  font-size: 13px;
+  margin: 6px 0 16px;
+}
+
+.checklist-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.privacy-notice {
+  background: #eef2fb;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.disclaimer-inline {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.photo-nav-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* Bottom nav */

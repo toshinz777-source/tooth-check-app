@@ -10,16 +10,39 @@ appropriate.
 - Step-by-step symptom check (location, triggers, pain level, duration,
   frequency, night pain, swelling, fever, pus/discharge, swallowing/breathing
   difficulty)
-- Three-level guidance: Monitor / Routine Dental Check, Book a Dentist Soon,
-  Urgent Dental Care
+- Optional **Photo Check** step: take a photo with the camera or upload one,
+  then record what you notice from a checklist of visible warning signs
+  (broken tooth, discoloration, swelling, bleeding, pus, redness, trauma,
+  etc.). This is a manual checklist, not automated image analysis — see
+  Photo Check & privacy below.
+- Four-level guidance that combines the questionnaire, the photo checklist,
+  and a set of red-flag symptoms (which always override everything else):
+  Low urgency, Book a Dentist Soon, Urgent Dental Assessment, and
+  Seek Urgent Medical or Dental Care Now
 - Symptom history saved locally in the browser (`localStorage`)
 - Simple trend detection that flags worsening symptoms
 - One-tap dentist summary you can copy and share
 
+## Photo Check & privacy
+
+Photo Check does **not** perform automated image diagnosis — doing that
+reliably would require sending your photo to an external AI service, which
+this app deliberately avoids. Instead, `analyzeDentalPhoto()` records which
+visible signs *you* select from a checklist, and `calculateCombinedUrgency()`
+weighs those alongside your questionnaire answers and any red-flag symptoms.
+
+- Photos are processed entirely on your device and are never uploaded to a
+  server, sent to a third party, or used for analytics.
+- Photos are **not saved by default**. You can choose "Keep this photo" to
+  attach it to that entry's history (still stored only in your browser's
+  `localStorage`), or use "Delete Photo" to discard it immediately.
+
 ## Tech
 
 Plain HTML, CSS, and JavaScript. No build step, no backend, no login, no
-external APIs — everything is stored in the browser's `localStorage`.
+external APIs — everything is stored in the browser's `localStorage`. The
+camera uses the standard `getUserMedia` API; no third-party camera or image
+libraries are used.
 
 ## Run locally
 

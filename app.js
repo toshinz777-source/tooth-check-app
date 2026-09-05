@@ -1,5 +1,8 @@
 /* Tooth Check
  * Symptom-urgency guidance only. Never diagnoses a condition.
+ * Photo Check records user-reported visible signs only — there is no
+ * automatic image analysis, since that would require sending photos to an
+ * external AI service, which this app deliberately avoids.
  */
 
 const HISTORY_KEY = "toothCheckHistory";
@@ -85,12 +88,35 @@ const DURATION_ORDER = [
 
 const FREQUENCY_ORDER = ["First time", "Occasionally", "Every day", "Several times a day"];
 
+// Visible signs a user can report noticing in their own photo. This is a
+// manual checklist, not automated image recognition — see the note at the
+// top of this file.
+const PHOTO_SIGNS = [
+  { id: "brokenTooth", label: "Obvious broken or chipped tooth" },
+  { id: "darkHole", label: "Large dark hole or severe discoloration" },
+  { id: "gumSwelling", label: "Visible gum swelling" },
+  { id: "bleeding", label: "Bleeding" },
+  { id: "pus", label: "Visible pus or discharge" },
+  { id: "redness", label: "Severe redness" },
+  { id: "facialSwelling", label: "Facial swelling visible in the image" },
+  { id: "trauma", label: "Trauma or missing tooth" },
+  { id: "other", label: "Other obvious visible abnormality" },
+];
+
+const SEVERITY_ORDER = ["green", "yellow", "red", "emergency"];
+
 let currentAnswers = {};
 let currentQuestionIndex = 0;
+
+let capturedPhotoDataUrl = null;
+let selectedPhotoSigns = new Set();
+let cameraStream = null;
 
 // ---------- Screen navigation ----------
 
 function showScreen(name) {
+  stopCamera();
+
   document.querySelectorAll(".screen").forEach((el) => el.classList.remove("active"));
   document.getElementById(`screen-${name}`).classList.add("active");
 
@@ -251,7 +277,9 @@ function goToNextQuestion() {
     currentQuestionIndex += 1;
     renderQuestion();
   } else {
-    finishCheck();
+    resetPhotoScreen();
+    showScreen("photo");
+    setActiveNav("check");
   }
 }
 
@@ -262,48 +290,285 @@ document.getElementById("back-btn").addEventListener("click", () => {
   }
 });
 
+// ---------- Photo Check ----------
+
+function resetPhotoScreen() {
+  capturedPhotoDataUrl = null;
+  selectedPhotoSigns = new Set();
+  document.getElementById("keep-photo-checkbox").checked = false;
+  document.getElementById("photo-file-input").value = "";
+  document.getElementById("camera-error").hidden = true;
+  stopCamera();
+  updatePhotoUiState();
+}
+
+function updatePhotoUiState() {
+  const hasPhoto = !!capturedPhotoDataUrl;
+  document.getElementById("photo-action-buttons").hidden = hasPhoto;
+  document.getElementById("photo-preview-wrapper").hidden = !hasPhoto;
+  document.getElementById("photo-checklist-wrapper").hidden = !hasPhoto;
+}
+
+async function openCamera() {
+  const errorBox = document.getElementById("camera-error");
+  errorBox.hidden = true;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    errorBox.hidden = false;
+    errorBox.textContent = "Camera access is not supported in this browser. Please use Upload Photo instead.";
+    return;
+  }
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+    const video = document.getElementById("camera-video");
+    video.srcObject = cameraStream;
+    document.getElementById("camera-view-wrapper").hidden = false;
+    document.getElementById("photo-action-buttons").hidden = true;
+  } catch {
+    errorBox.hidden = false;
+    errorBox.textContent = "Could not access the camera. Please allow camera permission or use Upload Photo instead.";
+  }
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  const wrapper = document.getElementById("camera-view-wrapper");
+  if (wrapper) wrapper.hidden = true;
+}
+
+function resizeToDataUrl(sourceEl, naturalWidth, naturalHeight, maxDim = 800) {
+  let width = naturalWidth;
+  let height = naturalHeight;
+
+  if (width > height && width > maxDim) {
+    height = Math.round(height * (maxDim / width));
+    width = maxDim;
+  } else if (height > maxDim) {
+    width = Math.round(width * (maxDim / height));
+    height = maxDim;
+  }
+
+  const canvas = document.getElementById("photo-canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d").drawImage(sourceEl, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
+function capturePhoto() {
+  const video = document.getElementById("camera-video");
+  const dataUrl = resizeToDataUrl(video, video.videoWidth, video.videoHeight);
+  stopCamera();
+  showPhotoPreview(dataUrl);
+}
+
+function handleFileUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const dataUrl = resizeToDataUrl(img, img.naturalWidth, img.naturalHeight);
+      showPhotoPreview(dataUrl);
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function showPhotoPreview(dataUrl) {
+  capturedPhotoDataUrl = dataUrl;
+  document.getElementById("photo-preview").src = dataUrl;
+  updatePhotoUiState();
+  renderPhotoChecklist();
+}
+
+function deletePhoto() {
+  capturedPhotoDataUrl = null;
+  selectedPhotoSigns.clear();
+  document.getElementById("keep-photo-checkbox").checked = false;
+  document.getElementById("photo-file-input").value = "";
+  updatePhotoUiState();
+}
+
+function renderPhotoChecklist() {
+  const container = document.getElementById("photo-checklist");
+  container.innerHTML = "";
+
+  PHOTO_SIGNS.forEach((sign) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "option-btn";
+    btn.textContent = sign.label;
+    if (selectedPhotoSigns.has(sign.id)) btn.classList.add("selected");
+    btn.addEventListener("click", () => {
+      if (selectedPhotoSigns.has(sign.id)) {
+        selectedPhotoSigns.delete(sign.id);
+      } else {
+        selectedPhotoSigns.add(sign.id);
+      }
+      btn.classList.toggle("selected");
+    });
+    container.appendChild(btn);
+  });
+}
+
+document.getElementById("open-camera-btn").addEventListener("click", openCamera);
+document.getElementById("cancel-camera-btn").addEventListener("click", () => {
+  stopCamera();
+  updatePhotoUiState();
+});
+document.getElementById("capture-photo-btn").addEventListener("click", capturePhoto);
+document.getElementById("upload-photo-btn").addEventListener("click", () => {
+  document.getElementById("photo-file-input").click();
+});
+document.getElementById("photo-file-input").addEventListener("change", handleFileUpload);
+document.getElementById("delete-photo-btn").addEventListener("click", deletePhoto);
+
+document.getElementById("skip-photo-btn").addEventListener("click", () => {
+  deletePhoto();
+  finishCheck();
+});
+document.getElementById("continue-photo-btn").addEventListener("click", () => {
+  finishCheck();
+});
+
+/**
+ * Records which visible warning signs the user reports noticing in their
+ * photo. This is a manual checklist, NOT automated image recognition, and
+ * it never produces a diagnosis — only a structured list of visible signs
+ * that calculateCombinedUrgency() can weigh alongside the questionnaire.
+ */
+function analyzeDentalPhoto(selectedSignIds) {
+  const findings = { hasPhoto: selectedSignIds !== null, signCount: 0 };
+  const ids = selectedSignIds || [];
+  PHOTO_SIGNS.forEach((sign) => {
+    findings[sign.id] = ids.includes(sign.id);
+  });
+  findings.signCount = ids.length;
+  return findings;
+}
+
 // ---------- Result computation ----------
 
-function computeResult(answers) {
+function computeQuestionnaireUrgency(answers, trendReasons) {
   const swelling = answers.swelling === "Yes";
   const fever = answers.fever === "Yes";
   const pus = answers.pus === "Yes";
-  const swallowBreath = answers.swallowBreath === "Yes";
   const nightPain = answers.nightPain === "Yes";
   const constantPain = answers.duration === "Constant pain";
-  const severeConstantPain = constantPain && answers.painScore >= 7;
   const longDuration = answers.duration === "More than 30 minutes" || constantPain;
   const recurring = answers.frequency !== "First time";
-  const moderateOrStrongPain = answers.painScore >= 4;
+  const strongPain = answers.painScore >= 7;
+  const moderatePain = answers.painScore >= 4 && answers.painScore < 7;
   const spontaneousPain = answers.triggers.includes("Pain without any trigger");
   const chewingPain = answers.triggers.includes("Chewing");
+  const worsening = Boolean(trendReasons && trendReasons.length);
 
-  if (swelling || fever || pus || swallowBreath || severeConstantPain) {
+  if (pus || swelling || (strongPain && (constantPain || longDuration)) || worsening) {
+    return "red";
+  }
+
+  if (recurring || moderatePain || longDuration || spontaneousPain || chewingPain || nightPain || fever) {
+    return "yellow";
+  }
+
+  return "green";
+}
+
+function computePhotoUrgency(pf) {
+  if (!pf || !pf.hasPhoto) return "green";
+  if (pf.pus || pf.facialSwelling || pf.redness || pf.trauma || pf.bleeding) return "red";
+  if (pf.darkHole || pf.gumSwelling || pf.brokenTooth || pf.other) return "yellow";
+  return "green";
+}
+
+function maxSeverity(a, b) {
+  return SEVERITY_ORDER.indexOf(a) >= SEVERITY_ORDER.indexOf(b) ? a : b;
+}
+
+/**
+ * Red flags always override the questionnaire and photo findings: if any
+ * are present the result is EMERGENCY regardless of everything else.
+ */
+function detectRedFlags(answers, photoFindings, trendReasons) {
+  const flags = [];
+
+  if (answers.swallowBreath === "Yes") {
+    flags.push("Difficulty swallowing or breathing");
+  }
+  if (answers.fever === "Yes" && answers.swelling === "Yes") {
+    flags.push("Fever with facial or dental swelling");
+  }
+  if (answers.painScore >= 9 && answers.duration === "Constant pain") {
+    flags.push("Severe uncontrolled pain");
+  }
+  if (photoFindings && photoFindings.trauma && photoFindings.bleeding) {
+    flags.push("Major trauma with uncontrolled bleeding");
+  }
+  if (photoFindings && photoFindings.facialSwelling && trendReasons && trendReasons.includes("New swelling appeared")) {
+    flags.push("Rapidly increasing facial swelling");
+  }
+
+  return flags;
+}
+
+/**
+ * Combines questionnaire symptoms, photo warning signs, and red-flag
+ * symptoms into a single urgency result. Red flags always win.
+ */
+function calculateCombinedUrgency(answers, photoFindings, trendReasons) {
+  const redFlags = detectRedFlags(answers, photoFindings, trendReasons);
+
+  if (redFlags.length > 0) {
     return {
-      level: "red",
-      title: "Urgent Dental Care",
+      level: "emergency",
+      title: "Seek urgent medical or dental care now",
       message:
-        "These symptoms can sometimes be associated with a serious dental problem and should be checked urgently. Please contact a dentist or seek medical care as soon as possible.",
-      urgentMessage: swallowBreath || swelling ? "Seek urgent medical or dental care now." : null,
+        "Your symptoms may indicate a serious medical emergency. Please seek urgent medical or dental care immediately — an emergency department, urgent care clinic, or emergency dental service.",
+      redFlags,
     };
   }
 
-  if (recurring || moderateOrStrongPain || longDuration || spontaneousPain || chewingPain || nightPain) {
+  const questionnaireLevel = computeQuestionnaireUrgency(answers, trendReasons);
+  const photoLevel = computePhotoUrgency(photoFindings);
+  const level = maxSeverity(questionnaireLevel, photoLevel);
+
+  if (level === "red") {
+    return {
+      level: "red",
+      title: "Urgent dental assessment",
+      message:
+        "These symptoms can sometimes be associated with a more serious dental problem and should be assessed urgently. Please contact a dentist as soon as possible.",
+      redFlags: [],
+    };
+  }
+
+  if (level === "yellow") {
     return {
       level: "yellow",
-      title: "Book a Dentist Soon",
+      title: "Book a dentist soon",
       message:
         "Your symptoms should be checked by a dentist soon. Tooth pain that keeps returning may be caused by decay, sensitivity, a cracked tooth, or another dental problem.",
-      urgentMessage: null,
+      redFlags: [],
     };
   }
 
   return {
     level: "green",
-    title: "Monitor / Routine Dental Check",
+    title: "Low urgency",
     message:
-      "Your symptoms do not appear urgent, but recurring tooth sensitivity can still need dental assessment. Consider booking a routine dental check if the problem continues.",
-    urgentMessage: null,
+      "No urgent warning signs were identified. This does not rule out dental disease. If symptoms continue or recur, book a routine dental check.",
+    redFlags: [],
   };
 }
 
@@ -318,7 +583,17 @@ function loadHistory() {
 }
 
 function saveHistory(history) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    // Storage quota can be exceeded once saved photos are involved.
+    // Retry without photo data rather than losing the check entirely.
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.map((e) => ({ ...e, photoDataUrl: null }))));
+    } catch {
+      // Give up silently; the check result is still shown to the user.
+    }
+  }
 }
 
 const MONTH_ABBR = [
@@ -331,11 +606,16 @@ function formatDate(date) {
 }
 
 function finishCheck() {
-  const result = computeResult(currentAnswers);
-  const now = new Date();
+  const keepPhoto = document.getElementById("keep-photo-checkbox").checked && !!capturedPhotoDataUrl;
+  const photoSignIds = Array.from(selectedPhotoSigns);
+  const photoFindings = analyzeDentalPhoto(capturedPhotoDataUrl ? photoSignIds : null);
 
+  const now = new Date();
   const history = loadHistory();
   const previousEntry = history.length ? history[history.length - 1] : null;
+  const trendReasons = detectTrend(currentAnswers, previousEntry) || [];
+
+  const result = calculateCombinedUrgency(currentAnswers, photoFindings, trendReasons);
 
   const entry = {
     id: crypto.randomUUID(),
@@ -351,6 +631,9 @@ function finishCheck() {
     fever: currentAnswers.fever,
     pus: currentAnswers.pus,
     swallowBreath: currentAnswers.swallowBreath,
+    photoTaken: photoFindings.hasPhoto,
+    photoSigns: photoSignIds,
+    photoDataUrl: keepPhoto ? capturedPhotoDataUrl : null,
     resultLevel: result.level,
     resultTitle: result.title,
   };
@@ -358,9 +641,12 @@ function finishCheck() {
   history.push(entry);
   saveHistory(history);
 
-  renderResult(result, entry, previousEntry);
+  renderResult(result, trendReasons, photoFindings);
   showScreen("result");
   setActiveNav("check");
+
+  capturedPhotoDataUrl = null;
+  selectedPhotoSigns = new Set();
 }
 
 function detectTrend(current, previous) {
@@ -380,27 +666,42 @@ function detectTrend(current, previous) {
   return reasons.length ? reasons : null;
 }
 
-function renderResult(result, entry, previousEntry) {
+function renderResult(result, trendReasons, photoFindings) {
   const badge = document.getElementById("result-badge");
   const title = document.getElementById("result-title");
   const message = document.getElementById("result-message");
-  const urgentBanner = document.getElementById("result-urgent");
+  const redFlagBanner = document.getElementById("result-redflags");
+  const photoSignsBanner = document.getElementById("result-photo-signs");
   const trendBanner = document.getElementById("trend-warning");
+  const photoDisclaimer = document.getElementById("result-photo-disclaimer");
 
   badge.className = `result-badge ${result.level}`;
   title.className = `result-title ${result.level}`;
   title.textContent = result.title;
   message.textContent = result.message;
 
-  if (result.urgentMessage) {
-    urgentBanner.hidden = false;
-    urgentBanner.textContent = result.urgentMessage;
+  if (result.redFlags && result.redFlags.length) {
+    redFlagBanner.hidden = false;
+    redFlagBanner.innerHTML =
+      "Seek urgent medical or dental care now." +
+      `<ul>${result.redFlags.map((r) => `<li>${r}</li>`).join("")}</ul>`;
   } else {
-    urgentBanner.hidden = true;
+    redFlagBanner.hidden = true;
   }
 
-  const trendReasons = detectTrend(entry, previousEntry);
-  if (trendReasons) {
+  if (photoFindings && photoFindings.hasPhoto) {
+    const noted = PHOTO_SIGNS.filter((s) => photoFindings[s.id]).map((s) => s.label);
+    photoSignsBanner.hidden = false;
+    photoSignsBanner.innerHTML = noted.length
+      ? `Photo check noted:<ul>${noted.map((l) => `<li>${l}</li>`).join("")}</ul>`
+      : "Photo check: no specific visible signs were noted.";
+    photoDisclaimer.hidden = false;
+  } else {
+    photoSignsBanner.hidden = true;
+    photoDisclaimer.hidden = true;
+  }
+
+  if (trendReasons && trendReasons.length) {
     trendBanner.hidden = false;
     trendBanner.innerHTML =
       "Your symptoms appear to be getting worse. Consider booking a dentist." +
@@ -447,8 +748,8 @@ function createHistoryItem(entry) {
   deleteBtn.textContent = "×";
   deleteBtn.setAttribute("aria-label", "Delete entry");
   deleteBtn.addEventListener("click", () => {
-    const history = loadHistory().filter((e) => e.id !== entry.id);
-    saveHistory(history);
+    const updated = loadHistory().filter((e) => e.id !== entry.id);
+    saveHistory(updated);
     renderHistory();
   });
 
@@ -473,6 +774,20 @@ function createHistoryItem(entry) {
   result.textContent = `Result: ${entry.resultTitle}`;
 
   item.append(deleteBtn, date, triggers, pain, duration, result);
+
+  if (entry.photoDataUrl) {
+    const thumb = document.createElement("img");
+    thumb.className = "history-thumb";
+    thumb.src = entry.photoDataUrl;
+    thumb.alt = "Saved dental photo";
+    item.appendChild(thumb);
+  } else if (entry.photoTaken) {
+    const note = document.createElement("div");
+    note.className = "history-detail";
+    note.textContent = "Photo check included (not saved)";
+    item.appendChild(note);
+  }
+
   return item;
 }
 
@@ -498,7 +813,7 @@ function generateSummaryText() {
 
   const frequencyDisplay = latest.frequency === "Every day" ? "Daily" : latest.frequency;
 
-  return [
+  const lines = [
     "Dental Symptom Summary",
     `Location: ${latest.location}`,
     `Trigger: ${latest.triggers.join(", ")}`,
@@ -508,8 +823,16 @@ function generateSummaryText() {
     `Night pain: ${latest.nightPain}`,
     `Swelling: ${latest.swelling}`,
     `Symptoms started: ${started.dateDisplay}`,
-    `App guidance: ${latest.resultTitle}`,
-  ].join("\n");
+  ];
+
+  if (latest.photoTaken) {
+    const noted = PHOTO_SIGNS.filter((s) => (latest.photoSigns || []).includes(s.id)).map((s) => s.label);
+    lines.push(`Photo check: ${noted.length ? noted.join(", ") : "No specific signs noted"}`);
+  }
+
+  lines.push(`App guidance: ${latest.resultTitle}`);
+
+  return lines.join("\n");
 }
 
 document.getElementById("generate-summary-btn").addEventListener("click", () => {

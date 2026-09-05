@@ -35,13 +35,75 @@
       <button id="question-next-btn" class="btn-primary btn-large" type="button" hidden>Next</button>
     </section>
 
+    <!-- PHOTO CHECK -->
+    <section id="screen-photo" class="screen">
+      <h2 class="screen-title">Photo Check</h2>
+      <p class="subtitle">Optional: add a photo to help estimate urgency. You can skip this step.</p>
+
+      <div class="camera-tips">
+        <p>Use good lighting</p>
+        <p>Get close to the tooth</p>
+        <p>Keep the image in focus</p>
+        <p>Take multiple angles if needed</p>
+      </div>
+
+      <div id="camera-view-wrapper" class="camera-view-wrapper" hidden>
+        <div class="camera-video-frame">
+          <video id="camera-video" playsinline autoplay muted></video>
+          <div class="camera-guide-overlay" aria-hidden="true">
+            <div class="guide-frame"></div>
+          </div>
+        </div>
+        <button id="capture-photo-btn" class="btn-primary btn-large" type="button">Take Photo</button>
+        <button id="cancel-camera-btn" class="btn-text" type="button">Cancel</button>
+      </div>
+
+      <div id="camera-error" class="camera-error" hidden></div>
+
+      <div id="photo-action-buttons" class="photo-action-buttons">
+        <button id="open-camera-btn" class="btn-primary btn-large" type="button">Take Photo</button>
+        <button id="upload-photo-btn" class="btn-secondary btn-large" type="button">Upload Photo</button>
+        <input id="photo-file-input" type="file" accept="image/*" hidden>
+      </div>
+
+      <canvas id="photo-canvas" hidden></canvas>
+
+      <div id="photo-preview-wrapper" class="photo-preview-wrapper" hidden>
+        <img id="photo-preview" class="photo-preview" alt="Dental photo preview">
+        <label class="keep-photo-label">
+          <input type="checkbox" id="keep-photo-checkbox">
+          Keep this photo attached to this entry (stored only on this device)
+        </label>
+        <button id="delete-photo-btn" class="btn-text" type="button">Delete Photo</button>
+      </div>
+
+      <div id="photo-checklist-wrapper" class="photo-checklist-wrapper" hidden>
+        <h3 class="checklist-title">What do you notice?</h3>
+        <p class="subtitle small">This is not an automatic diagnosis. Select anything you can see &mdash; your observations are combined with your answers to estimate urgency.</p>
+        <div id="photo-checklist" class="checklist-container"></div>
+      </div>
+
+      <div class="privacy-notice">
+        <strong>Your privacy:</strong> Photos stay on this device only. They are never uploaded to a server, sent to a third party, or used for analytics. Photos are not saved by default &mdash; check &ldquo;Keep this photo&rdquo; to attach it to this entry, or use Delete Photo to remove it.
+      </div>
+
+      <p class="disclaimer-inline">Photo analysis cannot detect many dental problems that require examination or X-rays. This app does not replace a dentist.</p>
+
+      <div class="photo-nav-actions">
+        <button id="continue-photo-btn" class="btn-primary btn-large" type="button">Continue</button>
+        <button id="skip-photo-btn" class="btn-secondary btn-large" type="button">Skip This Step</button>
+      </div>
+    </section>
+
     <!-- RESULT -->
     <section id="screen-result" class="screen">
       <div id="result-badge" class="result-badge"></div>
       <h2 id="result-title" class="result-title"></h2>
       <p id="result-message" class="result-message"></p>
-      <div id="result-urgent" class="urgent-banner" hidden></div>
+      <div id="result-redflags" class="urgent-banner" hidden></div>
+      <div id="result-photo-signs" class="photo-signs-banner" hidden></div>
       <div id="trend-warning" class="trend-warning" hidden></div>
+      <p id="result-photo-disclaimer" class="disclaimer-inline" hidden>Photo analysis cannot detect many dental problems that require examination or X-rays. This app does not replace a dentist.</p>
       <div class="result-actions">
         <button id="result-history-btn" class="btn-secondary btn-large" type="button">View History</button>
         <button id="result-home-btn" class="btn-primary btn-large" type="button">Done</button>
