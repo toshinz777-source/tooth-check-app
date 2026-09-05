@@ -83,11 +83,18 @@
         <div id="photo-checklist" class="checklist-container"></div>
       </div>
 
-      <div class="privacy-notice">
-        <strong>Your privacy:</strong> Photos stay on this device only. They are never uploaded to a server, sent to a third party, or used for analytics. Photos are not saved by default &mdash; check &ldquo;Keep this photo&rdquo; to attach it to this entry, or use Delete Photo to remove it.
+      <div id="ai-analysis-wrapper" class="ai-analysis-wrapper" hidden>
+        <h3 class="checklist-title">On-Device AI Photo Analysis <span class="experimental-tag">Experimental</span></h3>
+        <p class="subtitle small">Runs entirely on this device. The AI only flags visible features &mdash; it does not diagnose any condition.</p>
+        <div id="ai-analysis-status" class="ai-status" hidden></div>
+        <div id="ai-analysis-results" class="ai-results" hidden></div>
       </div>
 
-      <p class="disclaimer-inline">Photo analysis cannot detect many dental problems that require examination or X-rays. This app does not replace a dentist.</p>
+      <div class="privacy-notice">
+        <strong>Your privacy:</strong> Photos stay on this device only. All AI analysis also runs on this device &mdash; nothing is uploaded to a server, sent to a third party, or used for analytics. Photos are not saved by default &mdash; check &ldquo;Keep this photo&rdquo; to attach it to this entry, or use Delete Photo to remove it.
+      </div>
+
+      <p class="disclaimer-inline">Smartphone photo analysis cannot detect many dental problems, including problems inside the tooth or below the gumline. A normal-looking photo does not mean no dental treatment is needed.</p>
 
       <div class="photo-nav-actions">
         <button id="continue-photo-btn" class="btn-primary btn-large" type="button">Continue</button>
@@ -102,8 +109,9 @@
       <p id="result-message" class="result-message"></p>
       <div id="result-redflags" class="urgent-banner" hidden></div>
       <div id="result-photo-signs" class="photo-signs-banner" hidden></div>
+      <div id="result-ai-findings" class="ai-results-banner" hidden></div>
       <div id="trend-warning" class="trend-warning" hidden></div>
-      <p id="result-photo-disclaimer" class="disclaimer-inline" hidden>Photo analysis cannot detect many dental problems that require examination or X-rays. This app does not replace a dentist.</p>
+      <p id="result-photo-disclaimer" class="disclaimer-inline" hidden>Smartphone photo analysis cannot detect many dental problems, including problems inside the tooth or below the gumline. A normal-looking photo does not mean no dental treatment is needed.</p>
       <div class="result-actions">
         <button id="result-history-btn" class="btn-secondary btn-large" type="button">View History</button>
         <button id="result-home-btn" class="btn-primary btn-large" type="button">Done</button>
@@ -149,6 +157,7 @@
   </nav>
 
 </div>
+<script src="js/dental-ai.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

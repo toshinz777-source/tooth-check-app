@@ -13,12 +13,14 @@ appropriate.
 - Optional **Photo Check** step: take a photo with the camera or upload one,
   then record what you notice from a checklist of visible warning signs
   (broken tooth, discoloration, swelling, bleeding, pus, redness, trauma,
-  etc.). This is a manual checklist, not automated image analysis — see
-  Photo Check & privacy below.
+  etc.).
+- Optional, **experimental on-device AI photo analysis** (`js/dental-ai.js`,
+  ONNX Runtime Web) that can flag the same kind of visible features
+  automatically, each with a confidence score — see AI Photo Analysis below.
 - Four-level guidance that combines the questionnaire, the photo checklist,
-  and a set of red-flag symptoms (which always override everything else):
-  Low urgency, Book a Dentist Soon, Urgent Dental Assessment, and
-  Seek Urgent Medical or Dental Care Now
+  the AI result, and a set of red-flag symptoms (which always override
+  everything else): Low urgency, Book a Dentist Soon, Urgent Dental
+  Assessment, and Seek Urgent Medical or Dental Care Now
 - Symptom history saved locally in the browser (`localStorage`)
 - Simple trend detection that flags worsening symptoms
 - One-tap dentist summary you can copy and share
@@ -37,12 +39,46 @@ weighs those alongside your questionnaire answers and any red-flag symptoms.
   attach it to that entry's history (still stored only in your browser's
   `localStorage`), or use "Delete Photo" to discard it immediately.
 
+## AI Photo Analysis (experimental)
+
+`js/dental-ai.js` implements on-device dental photo analysis using
+[ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/), preferring
+the WebGPU execution provider and automatically falling back to WebAssembly
+when WebGPU isn't available. All inference — preprocessing, the forward
+pass, and interpreting the output — runs locally in the browser. The photo
+is never uploaded anywhere, and no analytics or cloud AI APIs are used.
+
+**No medically validated dental model is currently included.** See
+`models/README.md` for the expected model file, input/output shape, and
+category list. Until a model is added, the feature safely shows
+"Experimental — dental-specific AI model not yet installed" instead of
+fabricating a result. The rest of the app (questionnaire, manual photo
+checklist, history, trend detection, summary) works fully without it.
+
+The AI never diagnoses a condition — it only reports visible features (e.g.
+"visible dark area") with a confidence score, using wording like "This can
+have several causes and should be checked by a dentist," never "You have a
+cavity." A result is only shown when image quality (brightness, blur,
+resolution) passes a basic check, and an uncertain or low-confidence result
+is always labeled as such rather than presented as fact. The AI result can
+raise the questionnaire's urgency level (e.g. a confident finding on an
+otherwise mild questionnaire) but can never downgrade or override an
+emergency red flag (breathing/swallowing difficulty, fever with swelling,
+etc.) — see `calculateCombinedUrgency()` in both `app.js` and
+`js/dental-ai.js`.
+
 ## Tech
 
 Plain HTML, CSS, and JavaScript. No build step, no backend, no login, no
-external APIs — everything is stored in the browser's `localStorage`. The
-camera uses the standard `getUserMedia` API; no third-party camera or image
-libraries are used.
+API keys, no environment variables — everything is stored in the browser's
+`localStorage`. The camera uses the standard `getUserMedia` API.
+
+The one external dependency is the ONNX Runtime Web *library* itself
+(loaded from a CDN, only when the AI feature actually runs) — this is
+generic runtime code, not user data, and no photo or personal data is ever
+sent to that CDN or anywhere else. If you need a fully offline build,
+vendor `onnxruntime-web`'s `dist/` files into this repo and update
+`ORT_SCRIPT_URL` in `js/dental-ai.js`.
 
 ## Run locally
 

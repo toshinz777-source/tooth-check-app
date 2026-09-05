@@ -1,8 +1,9 @@
 /* Tooth Check
  * Symptom-urgency guidance only. Never diagnoses a condition.
- * Photo Check records user-reported visible signs only — there is no
- * automatic image analysis, since that would require sending photos to an
- * external AI service, which this app deliberately avoids.
+ * Photo Check records user-reported visible signs via a manual checklist,
+ * and can optionally run an experimental on-device AI pass (js/dental-ai.js)
+ * that only flags visible features with a confidence score. All AI
+ * inference happens locally in the browser — see js/dental-ai.js.
  */
 
 const HISTORY_KEY = "toothCheckHistory";
@@ -111,6 +112,7 @@ let currentQuestionIndex = 0;
 let capturedPhotoDataUrl = null;
 let selectedPhotoSigns = new Set();
 let cameraStream = null;
+let lastAiResult = null;
 
 // ---------- Screen navigation ----------
 
@@ -295,9 +297,11 @@ document.getElementById("back-btn").addEventListener("click", () => {
 function resetPhotoScreen() {
   capturedPhotoDataUrl = null;
   selectedPhotoSigns = new Set();
+  lastAiResult = null;
   document.getElementById("keep-photo-checkbox").checked = false;
   document.getElementById("photo-file-input").value = "";
   document.getElementById("camera-error").hidden = true;
+  resetAiPanel();
   stopCamera();
   updatePhotoUiState();
 }
@@ -307,6 +311,7 @@ function updatePhotoUiState() {
   document.getElementById("photo-action-buttons").hidden = hasPhoto;
   document.getElementById("photo-preview-wrapper").hidden = !hasPhoto;
   document.getElementById("photo-checklist-wrapper").hidden = !hasPhoto;
+  document.getElementById("ai-analysis-wrapper").hidden = !hasPhoto;
 }
 
 async function openCamera() {
@@ -390,13 +395,16 @@ function showPhotoPreview(dataUrl) {
   document.getElementById("photo-preview").src = dataUrl;
   updatePhotoUiState();
   renderPhotoChecklist();
+  runAiAnalysis(dataUrl);
 }
 
 function deletePhoto() {
   capturedPhotoDataUrl = null;
   selectedPhotoSigns.clear();
+  lastAiResult = null;
   document.getElementById("keep-photo-checkbox").checked = false;
   document.getElementById("photo-file-input").value = "";
+  resetAiPanel();
   updatePhotoUiState();
 }
 
@@ -456,6 +464,96 @@ function analyzeDentalPhoto(selectedSignIds) {
   });
   findings.signCount = ids.length;
   return findings;
+}
+
+// ---------- On-device AI photo analysis (see js/dental-ai.js) ----------
+
+function dataUrlToCanvas(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+    img.src = dataUrl;
+  });
+}
+
+function resetAiPanel() {
+  document.getElementById("ai-analysis-status").hidden = true;
+  const resultsBox = document.getElementById("ai-analysis-results");
+  resultsBox.hidden = true;
+  resultsBox.innerHTML = "";
+}
+
+async function runAiAnalysis(dataUrl) {
+  if (!window.DentalAI) return;
+
+  lastAiResult = null;
+  const statusBox = document.getElementById("ai-analysis-status");
+  const resultsBox = document.getElementById("ai-analysis-results");
+  statusBox.hidden = false;
+  statusBox.textContent = "Analyzing on this device…";
+  resultsBox.hidden = true;
+
+  const canvas = await dataUrlToCanvas(dataUrl);
+  const result = await window.DentalAI.analyzeDentalImage(canvas);
+  canvas.width = 0;
+  canvas.height = 0;
+
+  // The photo may have been deleted or replaced while analysis was running.
+  if (capturedPhotoDataUrl !== dataUrl) return;
+
+  lastAiResult = result;
+  statusBox.hidden = true;
+  resultsBox.hidden = false;
+  resultsBox.innerHTML = buildAiResultHtml(result);
+}
+
+/** Non-diagnostic HTML for one AI result, shared by the Photo Check panel and the Result screen. */
+function buildAiResultHtml(result) {
+  if (!result) return "";
+
+  if (result.status === "poor-quality") {
+    return (
+      '<p class="ai-warning">The photo is not clear enough for reliable analysis. Please retake the photo.</p>' +
+      `<ul class="ai-quality-list">${result.quality.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
+    );
+  }
+
+  if (result.status === "unavailable") {
+    const messages = {
+      "model-missing": "Experimental — dental-specific AI model not yet installed.",
+      "runtime-unavailable": "The on-device AI runtime could not be loaded on this device (check your connection).",
+      "session-failed": "The AI model could not be started on this device.",
+    };
+    return `<p class="ai-experimental">${messages[result.reason] || "On-device AI analysis is not available on this device."}</p>`;
+  }
+
+  if (result.status === "error") {
+    return '<p class="ai-warning">AI analysis could not be completed on this device. You can still use the checklist above.</p>';
+  }
+
+  const backendLabel = result.backend === "webgpu" ? "WebGPU" : "WebAssembly (WASM)";
+  const findingsHtml = result.findings
+    .map(
+      (f) =>
+        `<li><span class="ai-finding-label">${f.category}</span><span class="ai-finding-confidence">${Math.round(f.confidence * 100)}%</span></li>`
+    )
+    .join("");
+  const top = result.findings[0];
+  const explanation = (window.DentalAI && window.DentalAI.CATEGORY_EXPLANATIONS[top.category]) || "";
+
+  return (
+    `<p class="ai-backend-note">Analyzed on this device using ${backendLabel}.</p>` +
+    `<ul class="ai-findings-list">${findingsHtml}</ul>` +
+    (result.uncertain
+      ? '<p class="ai-warning">AI analysis is uncertain. Do not rely on this result to delay dental care.</p>'
+      : `<p class="ai-explanation">${explanation}</p>`)
+  );
 }
 
 // ---------- Result computation ----------
@@ -523,10 +621,12 @@ function detectRedFlags(answers, photoFindings, trendReasons) {
 }
 
 /**
- * Combines questionnaire symptoms, photo warning signs, and red-flag
- * symptoms into a single urgency result. Red flags always win.
+ * Combines questionnaire symptoms, manual photo warning signs, the
+ * on-device AI photo result, and red-flag symptoms into a single urgency
+ * result. Red flags always win — the AI result can never override or
+ * suppress an emergency.
  */
-function calculateCombinedUrgency(answers, photoFindings, trendReasons) {
+function calculateCombinedUrgency(answers, photoFindings, trendReasons, aiResult) {
   const redFlags = detectRedFlags(answers, photoFindings, trendReasons);
 
   if (redFlags.length > 0) {
@@ -541,7 +641,11 @@ function calculateCombinedUrgency(answers, photoFindings, trendReasons) {
 
   const questionnaireLevel = computeQuestionnaireUrgency(answers, trendReasons);
   const photoLevel = computePhotoUrgency(photoFindings);
-  const level = maxSeverity(questionnaireLevel, photoLevel);
+  let level = maxSeverity(questionnaireLevel, photoLevel);
+
+  if (window.DentalAI && aiResult) {
+    level = window.DentalAI.combineAIWithQuestionnaire(aiResult, level);
+  }
 
   if (level === "red") {
     return {
@@ -609,13 +713,14 @@ function finishCheck() {
   const keepPhoto = document.getElementById("keep-photo-checkbox").checked && !!capturedPhotoDataUrl;
   const photoSignIds = Array.from(selectedPhotoSigns);
   const photoFindings = analyzeDentalPhoto(capturedPhotoDataUrl ? photoSignIds : null);
+  const aiResult = lastAiResult;
 
   const now = new Date();
   const history = loadHistory();
   const previousEntry = history.length ? history[history.length - 1] : null;
   const trendReasons = detectTrend(currentAnswers, previousEntry) || [];
 
-  const result = calculateCombinedUrgency(currentAnswers, photoFindings, trendReasons);
+  const result = calculateCombinedUrgency(currentAnswers, photoFindings, trendReasons, aiResult);
 
   const entry = {
     id: crypto.randomUUID(),
@@ -634,6 +739,9 @@ function finishCheck() {
     photoTaken: photoFindings.hasPhoto,
     photoSigns: photoSignIds,
     photoDataUrl: keepPhoto ? capturedPhotoDataUrl : null,
+    aiStatus: aiResult ? aiResult.status : null,
+    aiFindings: aiResult && aiResult.status === "ok" ? aiResult.findings : null,
+    aiUncertain: aiResult && aiResult.status === "ok" ? aiResult.uncertain : null,
     resultLevel: result.level,
     resultTitle: result.title,
   };
@@ -641,12 +749,13 @@ function finishCheck() {
   history.push(entry);
   saveHistory(history);
 
-  renderResult(result, trendReasons, photoFindings);
+  renderResult(result, trendReasons, photoFindings, aiResult);
   showScreen("result");
   setActiveNav("check");
 
   capturedPhotoDataUrl = null;
   selectedPhotoSigns = new Set();
+  lastAiResult = null;
 }
 
 function detectTrend(current, previous) {
@@ -666,12 +775,13 @@ function detectTrend(current, previous) {
   return reasons.length ? reasons : null;
 }
 
-function renderResult(result, trendReasons, photoFindings) {
+function renderResult(result, trendReasons, photoFindings, aiResult) {
   const badge = document.getElementById("result-badge");
   const title = document.getElementById("result-title");
   const message = document.getElementById("result-message");
   const redFlagBanner = document.getElementById("result-redflags");
   const photoSignsBanner = document.getElementById("result-photo-signs");
+  const aiFindingsBanner = document.getElementById("result-ai-findings");
   const trendBanner = document.getElementById("trend-warning");
   const photoDisclaimer = document.getElementById("result-photo-disclaimer");
 
@@ -695,11 +805,18 @@ function renderResult(result, trendReasons, photoFindings) {
     photoSignsBanner.innerHTML = noted.length
       ? `Photo check noted:<ul>${noted.map((l) => `<li>${l}</li>`).join("")}</ul>`
       : "Photo check: no specific visible signs were noted.";
-    photoDisclaimer.hidden = false;
   } else {
     photoSignsBanner.hidden = true;
-    photoDisclaimer.hidden = true;
   }
+
+  if (aiResult) {
+    aiFindingsBanner.hidden = false;
+    aiFindingsBanner.innerHTML = buildAiResultHtml(aiResult);
+  } else {
+    aiFindingsBanner.hidden = true;
+  }
+
+  photoDisclaimer.hidden = !(photoFindings && photoFindings.hasPhoto);
 
   if (trendReasons && trendReasons.length) {
     trendBanner.hidden = false;
@@ -828,6 +945,13 @@ function generateSummaryText() {
   if (latest.photoTaken) {
     const noted = PHOTO_SIGNS.filter((s) => (latest.photoSigns || []).includes(s.id)).map((s) => s.label);
     lines.push(`Photo check: ${noted.length ? noted.join(", ") : "No specific signs noted"}`);
+  }
+
+  if (latest.aiStatus === "ok" && latest.aiFindings && latest.aiFindings.length) {
+    const top = latest.aiFindings[0];
+    const confidence = Math.round(top.confidence * 100);
+    const uncertainNote = latest.aiUncertain ? " (uncertain result)" : "";
+    lines.push(`On-device AI photo analysis: ${top.category} (${confidence}% confidence)${uncertainNote}`);
   }
 
   lines.push(`App guidance: ${latest.resultTitle}`);
