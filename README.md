@@ -48,12 +48,24 @@ when WebGPU isn't available. All inference — preprocessing, the forward
 pass, and interpreting the output — runs locally in the browser. The photo
 is never uploaded anywhere, and no analytics or cloud AI APIs are used.
 
-**No medically validated dental model is currently included.** See
-`models/README.md` for the expected model file, input/output shape, and
-category list. Until a model is added, the feature safely shows
-"Experimental — dental-specific AI model not yet installed" instead of
-fabricating a result. The rest of the app (questionnaire, manual photo
-checklist, history, trend detection, summary) works fully without it.
+**No medically validated dental model is currently included.** The target
+model is the public research/educational classifier
+[`nsr51324/Oral_Diseases_Image_Classification`](https://huggingface.co/nsr51324/Oral_Diseases_Image_Classification),
+but this app's build environment could not reach huggingface.co (blocked by
+network egress policy) to download, inspect, or convert it — see
+`models/README.md` for the exact steps to finish that integration and
+`scripts/convert_oral_disease_model.py` for the conversion tooling. Until a
+verified model is added, the feature safely shows "Experimental —
+dental-specific AI model not yet installed" instead of fabricating a
+result. The rest of the app (questionnaire, manual photo checklist,
+history, trend detection, summary) works fully without it.
+
+`js/dental-ai.js` reads model input/output shape, normalization, and the
+label-to-wording map from `models/model-config.js` whenever that file
+reports `verified: true` (meaning every value was actually confirmed
+against a real exported model), and otherwise falls back to its own
+generic placeholder categories — so adding a verified model needs no code
+changes, only running the conversion script.
 
 The AI never diagnoses a condition — it only reports visible features (e.g.
 "visible dark area") with a confidence score, using wording like "This can

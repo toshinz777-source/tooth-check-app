@@ -2,77 +2,163 @@
  *
  * Everything here runs locally in the browser via ONNX Runtime Web. No
  * photo, image data, or model output is ever sent to a server, logged, or
- * used for analytics. If `models/dental-visible-features.onnx` is not
- * present, every function degrades to a safe "unavailable" result instead
- * of throwing or fabricating a prediction — there is currently no
- * medically validated dental model shipped with this app.
+ * used for analytics.
+ *
+ * Target model: "nsr51324/Oral_Diseases_Image_Classification" (Hugging
+ * Face) — see models/README.md for status. This app's build environment
+ * could not reach huggingface.co to download/inspect/convert it, so no
+ * model file is shipped and no metadata is guessed. Every function here
+ * degrades to a safe "unavailable" result instead of throwing or
+ * fabricating a prediction when the model isn't present.
+ *
+ * Preprocessing, output shape, and label wording are read from
+ * models/model-config.js when it reports `verified: true` (meaning those
+ * values were actually confirmed against a real exported model — see
+ * scripts/convert_oral_disease_model.py). Until then, this module falls
+ * back to its own generic, already-tested placeholder category list, so
+ * today's app behavior is unchanged.
  *
  * The AI never diagnoses a condition. It can only report visible features
- * (e.g. "visible dark area") with a confidence score, for
+ * (e.g. "visible dark/caries-like area") with a confidence score, for
  * combineAIWithQuestionnaire() to weigh alongside the questionnaire.
  */
 
 const DentalAI = (function () {
-  const MODEL_URL = "models/dental-visible-features.onnx";
   const ORT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js";
-  const INPUT_SIZE = 224; // model input: 1x3x224x224, float32, 0-1 range
+  const DEFAULT_MODEL_URL = "models/dental-visible-features.onnx";
+  const DEFAULT_INPUT_SIZE = 224;
 
-  const CONFIDENCE_THRESHOLD = 0.5;
-  const UNCERTAIN_MARGIN = 0.15;
+  const CONFIDENCE_THRESHOLD = 0.5; // below this, a finding is not treated as positive
+  const UNCERTAIN_MARGIN = 0.15; // top two scores this close => uncertain
   const SEVERITY_ORDER = ["green", "yellow", "red", "emergency"];
+  const EXPERIMENTAL_DISCLAIMER = "Experimental AI finding — not a diagnosis.";
 
-  // Visible-feature categories only. Never a disease name.
-  const CATEGORIES = [
-    "visible dark area",
-    "visible tooth damage or chip",
-    "visible crack-like feature",
-    "visible gum redness",
-    "visible gum swelling",
-    "visible bleeding",
-    "visible discharge-like area",
-    "visible facial swelling",
-    "obvious trauma",
-    "no obvious visible abnormality",
+  // ---- Default (unverified-model) category set — unchanged from before ----
+  const DEFAULT_CATEGORIES = [
+    {
+      rawLabel: "visible dark area",
+      label: "visible dark area",
+      severity: "yellow",
+      explanation:
+        "A dark area is visible in the photo. This can have several causes and should be checked by a dentist if symptoms persist.",
+    },
+    {
+      rawLabel: "visible tooth damage or chip",
+      label: "visible tooth damage or chip",
+      severity: "yellow",
+      explanation:
+        "The photo shows what may be damage or a chip on the tooth surface. A dentist can confirm whether treatment is needed.",
+    },
+    {
+      rawLabel: "visible crack-like feature",
+      label: "visible crack-like feature",
+      severity: "yellow",
+      explanation:
+        "A crack-like line is visible on the tooth. This should be evaluated by a dentist, especially if biting causes pain.",
+    },
+    {
+      rawLabel: "visible gum redness",
+      label: "visible gum redness",
+      severity: "red",
+      explanation: "The gum tissue looks redder than usual in this photo. This can be worth mentioning at a dental visit.",
+    },
+    {
+      rawLabel: "visible gum swelling",
+      label: "visible gum swelling",
+      severity: "yellow",
+      explanation: "The gum tissue appears swollen in this photo. If this persists or grows, a dental check is recommended.",
+    },
+    {
+      rawLabel: "visible bleeding",
+      label: "visible bleeding",
+      severity: "red",
+      explanation:
+        "The photo shows what may be bleeding near the gum or tooth. This is worth discussing with a dentist, especially if it recurs.",
+    },
+    {
+      rawLabel: "visible discharge-like area",
+      label: "visible discharge-like area",
+      severity: "red",
+      explanation: "An area that may be discharge is visible in the photo. This should be assessed by a dentist promptly.",
+    },
+    {
+      rawLabel: "visible facial swelling",
+      label: "visible facial swelling",
+      severity: "red",
+      explanation: "The photo shows what may be facial swelling. If this is spreading or you feel unwell, seek prompt care.",
+    },
+    {
+      rawLabel: "obvious trauma",
+      label: "obvious trauma",
+      severity: "red",
+      explanation: "The photo shows signs that may indicate trauma or injury. A dentist should assess this as soon as possible.",
+    },
+    {
+      rawLabel: "no obvious visible abnormality",
+      label: "no obvious visible abnormality",
+      severity: "green",
+      explanation:
+        "No obvious visible abnormality was detected in this photo. Many dental problems cannot be detected from a smartphone photo.",
+    },
   ];
 
-  // Safe, non-diagnostic explanation shown for whichever category is on top.
-  const CATEGORY_EXPLANATIONS = {
-    "visible dark area":
-      "A dark area is visible in the photo. This can have several causes and should be checked by a dentist if symptoms persist.",
-    "visible tooth damage or chip":
-      "The photo shows what may be damage or a chip on the tooth surface. A dentist can confirm whether treatment is needed.",
-    "visible crack-like feature":
-      "A crack-like line is visible on the tooth. This should be evaluated by a dentist, especially if biting causes pain.",
-    "visible gum redness":
-      "The gum tissue looks redder than usual in this photo. This can be worth mentioning at a dental visit.",
-    "visible gum swelling":
-      "The gum tissue appears swollen in this photo. If this persists or grows, a dental check is recommended.",
-    "visible bleeding":
-      "The photo shows what may be bleeding near the gum or tooth. This is worth discussing with a dentist, especially if it recurs.",
-    "visible discharge-like area":
-      "An area that may be discharge is visible in the photo. This should be assessed by a dentist promptly.",
-    "visible facial swelling":
-      "The photo shows what may be facial swelling. If this is spreading or you feel unwell, seek prompt care.",
-    "obvious trauma":
-      "The photo shows signs that may indicate trauma or injury. A dentist should assess this as soon as possible.",
-    "no obvious visible abnormality":
-      "No obvious visible abnormality was detected in this photo. Many dental problems cannot be detected from a smartphone photo.",
-  };
+  function genericExplanation(label) {
+    return `"${label}" was flagged by the on-device AI. This is not a diagnosis — it should be checked by a dentist, especially if it persists.`;
+  }
 
-  // Maps an AI category to the same sign id used by the manual photo
-  // checklist, so both evidence sources share one severity table.
-  const CATEGORY_TO_SIGN_ID = {
-    "visible dark area": "darkHole",
-    "visible tooth damage or chip": "brokenTooth",
-    "visible crack-like feature": "brokenTooth",
-    "visible gum redness": "redness",
-    "visible gum swelling": "gumSwelling",
-    "visible bleeding": "bleeding",
-    "visible discharge-like area": "pus",
-    "visible facial swelling": "facialSwelling",
-    "obvious trauma": "trauma",
-    "no obvious visible abnormality": null,
-  };
+  /** Resolves the active category set + model settings from model-config.js, or the built-in defaults. */
+  function resolveConfig() {
+    const cfg = window.DENTAL_MODEL_CONFIG;
+    if (!cfg || !cfg.verified || !Array.isArray(cfg.labelOrder) || !cfg.labelOrder.length) {
+      return {
+        verified: false,
+        sourceModel: (cfg && cfg.sourceModel) || null,
+        modelUrl: DEFAULT_MODEL_URL,
+        inputWidth: DEFAULT_INPUT_SIZE,
+        inputHeight: DEFAULT_INPUT_SIZE,
+        channelOrder: "RGB",
+        layout: "NCHW",
+        mean: null,
+        std: null,
+        scale: 1 / 255,
+        outputIsProbabilities: null, // auto-detect
+        categories: DEFAULT_CATEGORIES,
+      };
+    }
+
+    const categories = cfg.labelOrder.map((rawLabel) => {
+      const entry = (cfg.labelToSafeWording && cfg.labelToSafeWording[rawLabel]) || {
+        label: rawLabel,
+        severity: "yellow",
+      };
+      return {
+        rawLabel,
+        label: entry.label,
+        severity: entry.severity || "yellow",
+        explanation: genericExplanation(entry.label),
+      };
+    });
+
+    return {
+      verified: true,
+      sourceModel: cfg.sourceModel || null,
+      modelUrl: cfg.modelPath || DEFAULT_MODEL_URL,
+      inputWidth: cfg.input.width || DEFAULT_INPUT_SIZE,
+      inputHeight: cfg.input.height || DEFAULT_INPUT_SIZE,
+      channelOrder: cfg.input.channelOrder || "RGB",
+      layout: cfg.input.layout || "NCHW",
+      mean: cfg.input.mean || null,
+      std: cfg.input.std || null,
+      scale: cfg.input.scale !== null && cfg.input.scale !== undefined ? cfg.input.scale : 1 / 255,
+      outputIsProbabilities: cfg.output.isProbabilities !== undefined ? cfg.output.isProbabilities : null,
+      categories,
+    };
+  }
+
+  const ACTIVE = resolveConfig();
+  const CATEGORY_BY_LABEL = new Map(ACTIVE.categories.map((c) => [c.label, c]));
+  const CATEGORIES = ACTIVE.categories.map((c) => c.label);
+  const CATEGORY_EXPLANATIONS = Object.fromEntries(ACTIVE.categories.map((c) => [c.label, c.explanation]));
 
   let session = null;
   let backend = null; // 'webgpu' | 'wasm' | null
@@ -81,6 +167,14 @@ const DentalAI = (function () {
 
   function maxSeverity(a, b) {
     return SEVERITY_ORDER.indexOf(a) >= SEVERITY_ORDER.indexOf(b) ? a : b;
+  }
+
+  /** UI confidence tier — display only, not a clinical threshold. */
+  function confidenceTier(confidence) {
+    if (confidence < 0.5) return "none";
+    if (confidence < 0.7) return "low";
+    if (confidence < 0.85) return "moderate";
+    return "high";
   }
 
   function loadOrtRuntime() {
@@ -102,7 +196,7 @@ const DentalAI = (function () {
   async function checkModelAvailability() {
     if (modelAvailability) return modelAvailability;
     try {
-      const res = await fetch(MODEL_URL, { method: "HEAD" });
+      const res = await fetch(ACTIVE.modelUrl, { method: "HEAD" });
       modelAvailability = { exists: res.ok };
     } catch {
       modelAvailability = { exists: false };
@@ -140,7 +234,7 @@ const DentalAI = (function () {
 
     for (const provider of providers) {
       try {
-        session = await window.ort.InferenceSession.create(MODEL_URL, {
+        session = await window.ort.InferenceSession.create(ACTIVE.modelUrl, {
           executionProviders: [provider],
         });
         backend = provider;
@@ -154,8 +248,37 @@ const DentalAI = (function () {
   }
 
   /**
-   * Checks brightness, blur, and resolution on the full-size photo canvas.
-   * AI analysis must not run on a photo that fails this gate.
+   * Heuristic only — NOT real subject detection. Compares contrast in a
+   * center crop against the full frame as a rough proxy for "is there a
+   * distinct subject filling the frame, or mostly blank background."
+   */
+  function estimateCenterContrast(grayscale, width, height) {
+    const cx0 = Math.floor(width * 0.2);
+    const cx1 = Math.ceil(width * 0.8);
+    const cy0 = Math.floor(height * 0.2);
+    const cy1 = Math.ceil(height * 0.8);
+
+    let sum = 0;
+    let sumSq = 0;
+    let n = 0;
+    for (let y = cy0; y < cy1; y += 2) {
+      for (let x = cx0; x < cx1; x += 2) {
+        const v = grayscale[y * width + x];
+        sum += v;
+        sumSq += v * v;
+        n++;
+      }
+    }
+    if (n === 0) return 0;
+    const mean = sum / n;
+    const variance = sumSq / n - mean * mean;
+    return Math.sqrt(Math.max(variance, 0));
+  }
+
+  /**
+   * Checks brightness, blur, resolution, and (heuristically) whether the
+   * frame contains a distinct subject, on the full-size photo canvas. AI
+   * analysis must not run on a photo that fails this gate.
    */
   function calculateImageQuality(canvas) {
     const width = canvas.width;
@@ -198,9 +321,15 @@ const DentalAI = (function () {
     const blurScore = gradientCount ? gradientSum / gradientCount : 0;
     if (blurScore < 8) reasons.push("Image appears blurry or out of focus");
 
+    const centerContrast = estimateCenterContrast(grayscale, width, height);
+    if (centerContrast < 10) {
+      reasons.push("The tooth or mouth area may not fill enough of the frame");
+    }
+
     return {
       brightness,
       blurScore,
+      centerContrast,
       width,
       height,
       overallOk: reasons.length === 0,
@@ -210,29 +339,58 @@ const DentalAI = (function () {
 
   /**
    * Resizes the photo to the model's expected input and returns an
-   * ort.Tensor (float32, NCHW, 0-1 range). Uses a throwaway canvas so the
-   * full-resolution photo buffer isn't duplicated any longer than needed.
+   * ort.Tensor matching the active config's layout, channel order, and
+   * normalization. Uses a throwaway canvas so the full-resolution photo
+   * buffer isn't duplicated any longer than needed.
    */
   function preprocessDentalImage(canvas) {
-    const resized = document.createElement("canvas");
-    resized.width = INPUT_SIZE;
-    resized.height = INPUT_SIZE;
-    const ctx = resized.getContext("2d");
-    ctx.drawImage(canvas, 0, 0, INPUT_SIZE, INPUT_SIZE);
-    const { data } = ctx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
+    const w = ACTIVE.inputWidth;
+    const h = ACTIVE.inputHeight;
 
-    const plane = INPUT_SIZE * INPUT_SIZE;
-    const chw = new Float32Array(3 * plane);
+    const resized = document.createElement("canvas");
+    resized.width = w;
+    resized.height = h;
+    const ctx = resized.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+
+    const plane = w * h;
+    const out = new Float32Array(3 * plane);
+
+    const normalize = (value, channelIndex) => {
+      let v = value / 255;
+      if (ACTIVE.mean && ACTIVE.std) {
+        v = (v - ACTIVE.mean[channelIndex]) / ACTIVE.std[channelIndex];
+      } else if (ACTIVE.scale !== null && ACTIVE.scale !== undefined) {
+        v = value * ACTIVE.scale;
+      }
+      return v;
+    };
+
+    const bgr = ACTIVE.channelOrder === "BGR";
     for (let p = 0; p < plane; p++) {
-      chw[p] = data[p * 4] / 255;
-      chw[plane + p] = data[p * 4 + 1] / 255;
-      chw[plane * 2 + p] = data[p * 4 + 2] / 255;
+      const r = data[p * 4];
+      const g = data[p * 4 + 1];
+      const b = data[p * 4 + 2];
+      const c0 = bgr ? b : r;
+      const c2 = bgr ? r : b;
+
+      if (ACTIVE.layout === "NHWC") {
+        out[p * 3] = normalize(c0, 0);
+        out[p * 3 + 1] = normalize(g, 1);
+        out[p * 3 + 2] = normalize(c2, 2);
+      } else {
+        out[p] = normalize(c0, 0);
+        out[plane + p] = normalize(g, 1);
+        out[plane * 2 + p] = normalize(c2, 2);
+      }
     }
 
     resized.width = 0;
     resized.height = 0;
 
-    return new window.ort.Tensor("float32", chw, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    const dims = ACTIVE.layout === "NHWC" ? [1, h, w, 3] : [1, 3, h, w];
+    return new window.ort.Tensor("float32", out, dims);
   }
 
   function softmax(values) {
@@ -244,24 +402,29 @@ const DentalAI = (function () {
 
   /**
    * Converts the raw model output tensor into labeled, sorted
-   * {category, confidence} findings, and flags the result as uncertain
-   * when confidence is low or the top two categories are too close to
-   * call.
+   * {category, confidence, tier} findings, and flags the result as
+   * uncertain when confidence is low or the top two categories are too
+   * close to call.
    */
   function interpretModelOutput(outputTensor) {
     const raw = Array.from(outputTensor.data);
     const looksNormalized =
       raw.every((v) => v >= 0 && v <= 1) && Math.abs(raw.reduce((a, b) => a + b, 0) - 1) < 0.05;
-    const probs = looksNormalized ? raw : softmax(raw);
+    const isProbabilities = ACTIVE.outputIsProbabilities !== null ? ACTIVE.outputIsProbabilities : looksNormalized;
+    const probs = isProbabilities ? raw : softmax(raw);
 
     const findings = CATEGORIES.map((category, i) => ({
       category,
       confidence: probs[i] || 0,
+      tier: confidenceTier(probs[i] || 0),
     })).sort((a, b) => b.confidence - a.confidence);
 
     const [top, second] = findings;
+    const invalidOutput = !top || findings.some((f) => Number.isNaN(f.confidence));
     const uncertain =
-      !top || top.confidence < CONFIDENCE_THRESHOLD || (second && top.confidence - second.confidence < UNCERTAIN_MARGIN);
+      invalidOutput ||
+      top.confidence < CONFIDENCE_THRESHOLD ||
+      (second && top.confidence - second.confidence < UNCERTAIN_MARGIN);
 
     return { findings, uncertain };
   }
@@ -297,6 +460,8 @@ const DentalAI = (function () {
         quality,
         findings,
         uncertain,
+        sourceModel: ACTIVE.sourceModel,
+        verifiedModel: ACTIVE.verified,
       };
     } catch {
       return { status: "error", quality };
@@ -324,18 +489,11 @@ const DentalAI = (function () {
       return baseLevel;
     }
 
-    const signIds = new Set(
-      aiResult.findings
-        .filter((f) => f.confidence >= CONFIDENCE_THRESHOLD && f.category !== "no obvious visible abnormality")
-        .map((f) => CATEGORY_TO_SIGN_ID[f.category])
-        .filter(Boolean)
-    );
-
     let aiLevel = "green";
-    if (signIds.has("pus") || signIds.has("facialSwelling") || signIds.has("redness") || signIds.has("trauma") || signIds.has("bleeding")) {
-      aiLevel = "red";
-    } else if (signIds.has("darkHole") || signIds.has("gumSwelling") || signIds.has("brokenTooth")) {
-      aiLevel = "yellow";
+    for (const finding of aiResult.findings) {
+      if (finding.confidence < CONFIDENCE_THRESHOLD) continue;
+      const meta = CATEGORY_BY_LABEL.get(finding.category);
+      if (meta && meta.severity) aiLevel = maxSeverity(aiLevel, meta.severity);
     }
 
     return maxSeverity(aiLevel, baseLevel);
@@ -403,10 +561,12 @@ const DentalAI = (function () {
     combineAIWithQuestionnaire,
     calculateCombinedUrgency,
     disposeImageData,
+    confidenceTier,
     CATEGORIES,
     CATEGORY_EXPLANATIONS,
-    CATEGORY_TO_SIGN_ID,
     CONFIDENCE_THRESHOLD,
+    EXPERIMENTAL_DISCLAIMER,
+    MODEL_STATUS: { verified: ACTIVE.verified, sourceModel: ACTIVE.sourceModel },
   };
 })();
 

@@ -513,13 +513,15 @@ async function runAiAnalysis(dataUrl) {
   resultsBox.innerHTML = buildAiResultHtml(result);
 }
 
+const TIER_LABELS = { none: null, low: "low confidence", moderate: "moderate confidence", high: "high confidence" };
+
 /** Non-diagnostic HTML for one AI result, shared by the Photo Check panel and the Result screen. */
 function buildAiResultHtml(result) {
   if (!result) return "";
 
   if (result.status === "poor-quality") {
     return (
-      '<p class="ai-warning">The photo is not clear enough for reliable analysis. Please retake the photo.</p>' +
+      '<p class="ai-warning">The photo is not clear enough for reliable AI analysis. Please retake the photo.</p>' +
       `<ul class="ai-quality-list">${result.quality.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
     );
   }
@@ -539,19 +541,21 @@ function buildAiResultHtml(result) {
 
   const backendLabel = result.backend === "webgpu" ? "WebGPU" : "WebAssembly (WASM)";
   const findingsHtml = result.findings
-    .map(
-      (f) =>
-        `<li><span class="ai-finding-label">${f.category}</span><span class="ai-finding-confidence">${Math.round(f.confidence * 100)}%</span></li>`
-    )
+    .map((f) => {
+      const tierLabel = window.DentalAI ? TIER_LABELS[window.DentalAI.confidenceTier(f.confidence)] : null;
+      const tierHtml = tierLabel ? ` <span class="ai-finding-tier">(${tierLabel})</span>` : "";
+      return `<li><span class="ai-finding-label">${f.category}${tierHtml}</span><span class="ai-finding-confidence">${Math.round(f.confidence * 100)}%</span></li>`;
+    })
     .join("");
   const top = result.findings[0];
   const explanation = (window.DentalAI && window.DentalAI.CATEGORY_EXPLANATIONS[top.category]) || "";
+  const experimentalDisclaimer = (window.DentalAI && window.DentalAI.EXPERIMENTAL_DISCLAIMER) || "";
 
   return (
-    `<p class="ai-backend-note">Analyzed on this device using ${backendLabel}.</p>` +
+    `<p class="ai-backend-note">Analyzed on this device using ${backendLabel}. ${experimentalDisclaimer}</p>` +
     `<ul class="ai-findings-list">${findingsHtml}</ul>` +
     (result.uncertain
-      ? '<p class="ai-warning">AI analysis is uncertain. Do not rely on this result to delay dental care.</p>'
+      ? '<p class="ai-warning">AI analysis is uncertain. Do not use this result to delay dental care.</p>'
       : `<p class="ai-explanation">${explanation}</p>`)
   );
 }
