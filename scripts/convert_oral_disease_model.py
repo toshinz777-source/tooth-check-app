@@ -87,7 +87,7 @@ def inspect_repo(repo_dir: Path):
     config_path = repo_dir / "config.json"
     if config_path.exists():
         print("\n=== config.json ===")
-        config = json.loads(config_path.read_text())
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         print(json.dumps(config, indent=2)[:4000])
         if "id2label" in config:
             print("\nFound id2label in config.json — this is the real label order to use:")
@@ -97,13 +97,13 @@ def inspect_repo(repo_dir: Path):
     preprocessor_config_path = repo_dir / "preprocessor_config.json"
     if preprocessor_config_path.exists():
         print("\n=== preprocessor_config.json (real normalization/size values) ===")
-        print(preprocessor_config_path.read_text())
+        print(preprocessor_config_path.read_text(encoding="utf-8"))
 
     for readme_name in ("README.md", "readme.md"):
         readme_path = repo_dir / readme_name
         if readme_path.exists():
             print(f"\n=== {readme_name} (first 3000 chars) ===")
-            print(readme_path.read_text()[:3000])
+            print(readme_path.read_text(encoding="utf-8")[:3000])
             break
 
     has_pytorch = any(f.endswith((".bin", ".safetensors")) for f in files)
