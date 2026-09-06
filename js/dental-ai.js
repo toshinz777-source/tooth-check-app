@@ -33,6 +33,17 @@ const DentalAI = (function () {
   const SEVERITY_ORDER = ["green", "yellow", "red", "emergency"];
   const EXPERIMENTAL_DISCLAIMER = "Experimental AI finding — not a diagnosis.";
 
+  // The fraction of the frame treated as "center" for both the blur check
+  // and the subject-framing check — a phone dental photo typically has the
+  // mouth roughly centered, with background, chin, or dark surroundings
+  // toward the edges.
+  const CENTER_REGION_FRACTION = 0.6;
+  // Average gradient-magnitude threshold below which the center region is
+  // considered out of focus. Measured on real in-focus smartphone dental
+  // photos (center-cropped), values are comfortably above 5; genuinely
+  // blurry/out-of-focus photos fall well below it.
+  const BLUR_THRESHOLD = 5;
+
   // ---- Default (unverified-model) category set — unchanged from before ----
   const DEFAULT_CATEGORIES = [
     {
@@ -247,22 +258,28 @@ const DentalAI = (function () {
     return { available: false, backend: null, reason: "session-failed" };
   }
 
+  /** Bounding box of the central region used for both blur and framing checks. */
+  function getCenterRegion(width, height) {
+    const margin = (1 - CENTER_REGION_FRACTION) / 2;
+    return {
+      x0: Math.floor(width * margin),
+      x1: Math.ceil(width * (1 - margin)),
+      y0: Math.floor(height * margin),
+      y1: Math.ceil(height * (1 - margin)),
+    };
+  }
+
   /**
    * Heuristic only — NOT real subject detection. Compares contrast in a
    * center crop against the full frame as a rough proxy for "is there a
    * distinct subject filling the frame, or mostly blank background."
    */
-  function estimateCenterContrast(grayscale, width, height) {
-    const cx0 = Math.floor(width * 0.2);
-    const cx1 = Math.ceil(width * 0.8);
-    const cy0 = Math.floor(height * 0.2);
-    const cy1 = Math.ceil(height * 0.8);
-
+  function estimateCenterContrast(grayscale, width, region) {
     let sum = 0;
     let sumSq = 0;
     let n = 0;
-    for (let y = cy0; y < cy1; y += 2) {
-      for (let x = cx0; x < cx1; x += 2) {
+    for (let y = region.y0; y < region.y1; y += 2) {
+      for (let x = region.x0; x < region.x1; x += 2) {
         const v = grayscale[y * width + x];
         sum += v;
         sumSq += v * v;
@@ -273,6 +290,34 @@ const DentalAI = (function () {
     const mean = sum / n;
     const variance = sumSq / n - mean * mean;
     return Math.sqrt(Math.max(variance, 0));
+  }
+
+  /**
+   * Lightweight blur estimate: average gradient magnitude within the
+   * center region only, sampled on a stride to stay fast on phone-sized
+   * photos. Restricted to the center so a dark background, hair, or
+   * shoulders around the mouth don't dilute the score with near-zero
+   * gradients — that dilution was causing sharp dental photos to read as
+   * blurry.
+   */
+  function calculateBlurScore(grayscale, width, height, region) {
+    const x0 = Math.max(1, region.x0);
+    const x1 = Math.min(width - 1, region.x1);
+    const y0 = Math.max(1, region.y0);
+    const y1 = Math.min(height - 1, region.y1);
+
+    let gradientSum = 0;
+    let gradientCount = 0;
+    for (let y = y0; y < y1; y += 2) {
+      for (let x = x0; x < x1; x += 2) {
+        const idx = y * width + x;
+        const gx = grayscale[idx + 1] - grayscale[idx - 1];
+        const gy = grayscale[idx + width] - grayscale[idx - width];
+        gradientSum += Math.abs(gx) + Math.abs(gy);
+        gradientCount++;
+      }
+    }
+    return gradientCount ? gradientSum / gradientCount : 0;
   }
 
   /**
@@ -305,23 +350,12 @@ const DentalAI = (function () {
     if (brightness < 40) reasons.push("Image is too dark");
     if (brightness > 235) reasons.push("Image is overexposed");
 
-    // Lightweight blur estimate: average gradient magnitude, sampled on a
-    // stride to stay fast on phone-sized photos.
-    let gradientSum = 0;
-    let gradientCount = 0;
-    for (let y = 1; y < height - 1; y += 2) {
-      for (let x = 1; x < width - 1; x += 2) {
-        const idx = y * width + x;
-        const gx = grayscale[idx + 1] - grayscale[idx - 1];
-        const gy = grayscale[idx + width] - grayscale[idx - width];
-        gradientSum += Math.abs(gx) + Math.abs(gy);
-        gradientCount++;
-      }
-    }
-    const blurScore = gradientCount ? gradientSum / gradientCount : 0;
-    if (blurScore < 8) reasons.push("Image appears blurry or out of focus");
+    const region = getCenterRegion(width, height);
 
-    const centerContrast = estimateCenterContrast(grayscale, width, height);
+    const blurScore = calculateBlurScore(grayscale, width, height, region);
+    if (blurScore < BLUR_THRESHOLD) reasons.push("Image appears blurry or out of focus");
+
+    const centerContrast = estimateCenterContrast(grayscale, width, region);
     if (centerContrast < 10) {
       reasons.push("The tooth or mouth area may not fill enough of the frame");
     }
