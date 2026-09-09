@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- シンプルな「タップの波紋」をイメージしたアイコン -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24 C72.7,24 88,39.3 88,58 C88,76.7 72.7,92 54,92 C35.3,92 20,76.7 20,58 C20,39.3 35.3,24 54,24 Z M54,36 C41.85,36 32,45.85 32,58 C32,70.15 41.85,80 54,80 C66.15,80 76,70.15 76,58 C76,45.85 66.15,36 54,36 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,48 C60.63,48 66,53.37 66,60 C66,66.63 60.63,72 54,72 C47.37,72 42,66.63 42,60 C42,53.37 47.37,48 54,48 Z" />
+</vector>

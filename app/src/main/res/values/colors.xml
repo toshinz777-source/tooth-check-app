@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_ready">#212121</color>
+    <color name="background_double_tap">#2E7D32</color>
+    <color name="text_on_dark">#FFFFFF</color>
+
+    <color name="ic_launcher_background">#3F51B5</color>
+</resources>

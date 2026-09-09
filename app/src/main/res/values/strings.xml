@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TapDetector</string>
+
+    <!-- 画面に表示する状態文字列 -->
+    <string name="state_ready">READY</string>
+    <string name="state_double_tap">DOUBLE TAP</string>
+</resources>
