@@ -1,7 +1,11 @@
 # 音声シャッターカメラ (tooth-check-app)
 
 シャッターボタンを押さずに、音声だけで写真を撮影できるカメラアプリです。
-ビルド不要のプレーンな HTML / CSS / JavaScript で作られています。
+
+- **`android/`**: ホーム画面のアイコンから起動できる Android ネイティブアプリ(推奨・メインの成果物)。
+  ビルド方法・Samsung Galaxy 実機へのインストール手順は [android/README.md](android/README.md) を参照してください。
+- ルート直下の `index.html` / `style.css` / `app.js`: 最初に作成した Web 版のプロトタイプ(ビルド不要の HTML / CSS / JavaScript)。
+  ブラウザの Web Speech API に依存するため、Android の WebView では音声認識が動作しません。
 
 ## 使い方
 

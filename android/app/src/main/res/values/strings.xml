@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">音声シャッターカメラ</string>
+    <string name="status_camera_off">カメラ起動中…</string>
+    <string name="status_voice_stopped">音声認識: 停止中</string>
+    <string name="button_shutter">📷 撮影</string>
+    <string name="button_torch">🔦 フラッシュ</string>
+    <string name="button_voice_start">音声操作を開始</string>
+    <string name="voice_hint">「フラッシュオン」でフラッシュ点灯して撮影、「撮って」「撮影」「オン」でそのまま撮影します。</string>
+</resources>
