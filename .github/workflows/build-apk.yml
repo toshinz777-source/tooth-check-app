@@ -13,6 +13,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: android
@@ -41,3 +43,14 @@ jobs:
         with:
           name: voice-shutter-camera-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish APK as a GitHub Release asset (stable direct-download link)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: 音声シャッターカメラ (最新ビルド)
+          body: コミット ${{ github.sha }} から自動ビルドされた debug APK です。
+          make_latest: true
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

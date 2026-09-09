@@ -24,9 +24,14 @@ APK を成果物(Artifact)としてアップロードします。**手元に And
 1. このブランチ(またはマージ後のブランチ)を GitHub に push する(すでに push 済みならこのステップは不要)。
 2. GitHub リポジトリの **Actions** タブを開き、「Build Android APK」ワークフローの実行を確認する。
    - push で自動実行されます。手動で実行したい場合は Actions タブから `workflow_dispatch` (Run workflow) を使ってください。
-3. ビルドが緑色(成功)になったら、その実行(Run)のページ下部にある
-   **Artifacts** セクションから `voice-shutter-camera-debug-apk` をクリックしてダウンロードする。
-4. ダウンロードした zip を展開すると `app-debug.apk` が出てきます。これが実機にインストールする APK です。
+3. ビルドが成功すると、`apk-latest` タグの GitHub Release に APK が自動でアップロードされます。
+   スマートフォンのブラウザから直接次の URL を開けば、そのまま APK をダウンロードできます(ビルドのたびに同じ URL の中身が最新版に更新されます)。
+
+   ```
+   https://github.com/toshinz777-source/tooth-check-app/releases/latest/download/app-debug.apk
+   ```
+
+   (従来どおり Actions の実行ページ下部の **Artifacts** から `voice-shutter-camera-debug-apk` をダウンロードすることもできますが、こちらは GitHub へのログインと zip の展開が必要です。)
 
 ## Samsung Galaxy 実機へのインストール手順
 
