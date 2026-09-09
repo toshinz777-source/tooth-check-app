@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>音声シャッターカメラ</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>音声シャッターカメラ</h1>
+    <p class="subtitle">手を使わず、声だけで撮影できます</p>
+  </header>
+
+  <main>
+    <section class="camera-section">
+      <div class="video-wrap">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="canvas" hidden></canvas>
+        <div id="flashOverlay" class="flash-overlay"></div>
+        <div id="statusBadge" class="status-badge">カメラ停止中</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn btn-primary">カメラを起動</button>
+        <button id="stopBtn" class="btn" hidden>カメラを停止</button>
+        <button id="shutterBtn" class="btn btn-shutter" disabled>📷 撮影</button>
+        <button id="torchBtn" class="btn" disabled>🔦 フラッシュ</button>
+      </div>
+
+      <div class="voice-panel">
+        <div class="voice-status">
+          <span id="micIndicator" class="mic-dot"></span>
+          <span id="voiceStatusText">音声認識: 停止中</span>
+        </div>
+        <button id="voiceBtn" class="btn" disabled>音声操作を開始</button>
+        <p class="voice-hint">
+          撮影モード中に「<strong>フラッシュオン</strong>」と言うとフラッシュをたいて撮影、
+          「<strong>オン</strong>」と言うとそのまま撮影します。
+        </p>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+      </div>
+
+      <p id="warning" class="warning" hidden></p>
+    </section>
+
+    <section class="gallery-section">
+      <h2>撮影した写真</h2>
+      <div id="gallery" class="gallery"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
