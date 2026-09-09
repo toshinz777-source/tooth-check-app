@@ -10,6 +10,9 @@
         android:name="android.hardware.sensor.accelerometer"
         android:required="false" />
 
+    <!-- 録音機能に必要なマイク権限。危険な権限なので、実行時にも許可ダイアログを表示する -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

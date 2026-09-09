@@ -1,27 +1,44 @@
 package com.example.tapdetector
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.MediaRecorder
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.speech.tts.TextToSpeech
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.example.tapdetector.databinding.ActivityMainBinding
+import java.io.File
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.sqrt
 
 /**
- * ステップ1: 「スマホ本体を2回叩いたら、画面に DOUBLE TAP と表示する」だけを実装したActivity。
+ * ステップ2: タップ回数（2回 / 3回）を区別して、以下の機能を実装したActivity。
  *
- * 仕組みの概要：
- *  1. 加速度センサー(Accelerometer)から、常にX/Y/Z軸方向の加速度が送られてくる。
- *  2. スマホを指で叩くと、その瞬間だけ加速度が大きく変化する（衝撃＝ピークが出る）。
- *  3. このピークを「1回のタップ」として検出する。
- *  4. 直近のタップの発生時刻を記録しておき、「短い時間の中で2回」タップが検出されたら
- *     ダブルタップとみなして画面表示を切り替える。
+ *  - 2回叩く   → 録音の開始 / 停止（トグル）
+ *  - 3回叩く   → 現在の日付と時刻を日本語音声で読み上げる(Text-to-Speech)
  *
- * 録音やテキスト読み上げは、この後のステップで追加していく。
+ * 【2回と3回をどう区別しているか】
+ * 「2回目のタップ」が来た瞬間には、まだ「これが2回で終わりなのか、
+ * このあと3回目が来るのか」は分からない。
+ * そこで、タップを検出するたびに「少し待ってから判定する」タイマーを
+ * 仕掛け直す(リセットする)ようにしている。
+ * 一定時間(TAP_GROUP_WINDOW_MS)だけ次のタップが来なければ、
+ * 「そこまでに数えたタップ回数で確定」として、2回なら録音トグル、
+ * 3回なら読み上げ、という処理を実行する。
  */
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -45,15 +62,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         private const val MIN_INTERVAL_BETWEEN_TAPS_MS = 120L
 
         /**
-         * 「連続タップ」とみなす時間の幅(ミリ秒)。
-         * この時間内に2回タップが検出されたら「ダブルタップ」と判定する。
+         * 「同じ一連のタップ（連続タップ）」とみなす、タップとタップの最大間隔(ミリ秒)。
+         * この時間内に次のタップが来れば「同じグループ」としてカウントを続ける。
+         * この時間を過ぎても次のタップが来なければ、そこまでのタップ回数で確定する。
+         *
+         * つまりこの値が「2回タップか3回タップかを見分けるための待ち時間」でもある。
          */
-        private const val DOUBLE_TAP_WINDOW_MS = 500L
+        private const val TAP_GROUP_WINDOW_MS = 450L
 
-        /**
-         * 「DOUBLE TAP」と表示したあと、何ミリ秒後に「READY」表示へ自動的に戻すか。
-         */
-        private const val DISPLAY_RESET_DELAY_MS = 1500L
+        /** 録音ファイル名に付ける日時のフォーマット（例: 2026-09-09_17-05） */
+        private const val FILE_NAME_DATE_PATTERN = "yyyy-MM-dd_HH-mm"
+
+        /** 読み上げる日時のフォーマット（例: 2026年9月9日 17時5分） */
+        private const val SPEECH_DATE_PATTERN = "yyyy'年'M'月'd'日' H'時'm'分'"
     }
 
     // ------------------------------------------------------------
@@ -66,11 +87,43 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     // 画面のUI部品にアクセスするためのViewBinding
     private lateinit var binding: ActivityMainBinding
 
-    // 「READY」表示に戻すための遅延処理を管理するHandler
+    // タイマー処理（一定時間後に判定を行う、表示を戻す等）を管理するHandler
     private val uiHandler = Handler(Looper.getMainLooper())
 
-    // 直前に検出した「1回のタップ」の時刻（ミリ秒）。まだ無ければ0。
-    private var lastTapTimeMs = 0L
+    // 現在数えている「一連のタップ」の時刻を記録するリスト
+    private val tapTimestamps = mutableListOf<Long>()
+
+    // タップ回数を確定させるための判定処理（TAP_GROUP_WINDOW_MS後に実行される）
+    private val decideTapCountRunnable = Runnable { onTapGroupFinished() }
+
+    // ------------------------------------------------------------
+    // 録音関連
+    // ------------------------------------------------------------
+
+    private var mediaRecorder: MediaRecorder? = null
+    private var isRecording = false
+    private var currentOutputFile: File? = null
+
+    // ------------------------------------------------------------
+    // Text-to-Speech関連
+    // ------------------------------------------------------------
+
+    private var textToSpeech: TextToSpeech? = null
+    private var isTtsReady = false
+
+    // ------------------------------------------------------------
+    // マイク権限（RECORD_AUDIO）の実行時リクエスト
+    // ------------------------------------------------------------
+
+    // 権限リクエストの結果を受け取るためのランチャー。
+    // Activityがまだ「開始」状態になる前（＝コンストラクタ実行時）に登録しておく必要がある。
+    private val requestRecordAudioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            updateStatusDisplay()
+            if (!granted) {
+                Toast.makeText(this, getString(R.string.toast_permission_denied), Toast.LENGTH_LONG).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,9 +134,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        // 日本語の音声合成エンジンを準備する
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = textToSpeech?.setLanguage(Locale.JAPAN)
+                isTtsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                    result != TextToSpeech.LANG_NOT_SUPPORTED
+            }
+        }
+
+        // マイク権限がまだ無ければ、起動時にリクエストダイアログを出す
+        if (!hasRecordAudioPermission()) {
+            requestRecordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+
         if (accelerometer == null) {
-            // 加速度センサーが無い端末では、その旨を表示して終了する
+            // 加速度センサーが無い端末では、その旨を表示する
             binding.statusTextView.text = "NO SENSOR"
+        } else {
+            updateStatusDisplay()
         }
     }
 
@@ -101,9 +170,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // 画面が破棄されるときに、録音中であれば安全に止めてリソースを解放する
+        if (isRecording) {
+            stopRecordingInternal(discard = true)
+        }
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        uiHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
     /**
      * 加速度センサーの値が更新されるたびに呼ばれる。
-     * ここで「叩いた衝撃」を検出し、ダブルタップかどうかを判定する。
+     * ここで「叩いた衝撃」を検出し、タップとして記録していく。
      */
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
@@ -126,50 +211,176 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     /**
      * しきい値を超える衝撃を検出したときに呼ばれる。
-     * ここで「本当に新しい1回のタップか」「ダブルタップが成立したか」を判定する。
+     * 「本当に新しい1回のタップか」を確認したうえで、タップ履歴に追加する。
      */
     private fun handlePossibleTap() {
         val now = System.currentTimeMillis()
 
         // 直前のタップから短時間しか経っていない場合は、
         // 同じ1回の衝撃の振動を誤って何回も数えている可能性が高いので無視する
-        if (now - lastTapTimeMs < MIN_INTERVAL_BETWEEN_TAPS_MS) {
+        val lastTapTime = tapTimestamps.lastOrNull()
+        if (lastTapTime != null && now - lastTapTime < MIN_INTERVAL_BETWEEN_TAPS_MS) {
             return
         }
 
-        // 前回のタップから「ダブルタップ判定の時間幅」以内であれば、ダブルタップ成立
-        val isDoubleTap = (lastTapTimeMs != 0L) && (now - lastTapTimeMs <= DOUBLE_TAP_WINDOW_MS)
+        tapTimestamps.add(now)
+        updateDebugText()
 
-        if (isDoubleTap) {
-            onDoubleTapDetected()
-            // 3回目のタップを誤って次のダブルタップの1回目として数えないよう、
-            // 一旦タップ履歴をリセットする
-            lastTapTimeMs = 0L
+        // タップが来るたびに「判定タイマー」をリセットする。
+        // → TAP_GROUP_WINDOW_MSの間、次のタップが来なければ onTapGroupFinished() が呼ばれる。
+        uiHandler.removeCallbacks(decideTapCountRunnable)
+        uiHandler.postDelayed(decideTapCountRunnable, TAP_GROUP_WINDOW_MS)
+    }
+
+    /**
+     * 「一連のタップ」が終わった（＝TAP_GROUP_WINDOW_MSの間、次のタップが来なかった）ときに呼ばれる。
+     * ここでタップ回数を確定し、2回なら録音トグル、3回なら読み上げを実行する。
+     */
+    private fun onTapGroupFinished() {
+        val tapCount = tapTimestamps.size
+        tapTimestamps.clear()
+        updateDebugText()
+
+        when (tapCount) {
+            2 -> toggleRecording()
+            3 -> speakCurrentDateTime()
+            // 1回だけ、または4回以上は「意図した操作」ではないとみなして何もしない
+        }
+    }
+
+    private fun updateDebugText() {
+        binding.debugTextView.text = "しきい値:$TAP_THRESHOLD  タップ数:${tapTimestamps.size}"
+    }
+
+    // ------------------------------------------------------------
+    // 録音の開始・停止
+    // ------------------------------------------------------------
+
+    private fun toggleRecording() {
+        if (isRecording) {
+            stopRecordingInternal(discard = false)
         } else {
-            // これが「1回目のタップ」として記録される
-            lastTapTimeMs = now
+            startRecording()
+        }
+    }
+
+    private fun startRecording() {
+        if (!hasRecordAudioPermission()) {
+            Toast.makeText(this, getString(R.string.toast_permission_denied), Toast.LENGTH_LONG).show()
+            // 権限が無いなら、この場でもう一度お願いする
+            requestRecordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+
+        val outputFile = createOutputFile()
+
+        // API 31以降は MediaRecorder(Context) を使うことが推奨されている
+        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(this)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
+
+        try {
+            recorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(outputFile.absolutePath)
+                prepare()
+                start()
+            }
+            mediaRecorder = recorder
+            currentOutputFile = outputFile
+            isRecording = true
+            updateStatusDisplay()
+        } catch (e: IOException) {
+            recorder.release()
+            Toast.makeText(this, getString(R.string.toast_recording_start_failed), Toast.LENGTH_LONG).show()
+        } catch (e: IllegalStateException) {
+            recorder.release()
+            Toast.makeText(this, getString(R.string.toast_recording_start_failed), Toast.LENGTH_LONG).show()
         }
     }
 
     /**
-     * ダブルタップが検出されたときの処理。
-     * 画面に「DOUBLE TAP」と大きく表示し、一定時間後に「READY」へ自動で戻す。
-     *
-     * センサーのコールバックは別スレッドで呼ばれる可能性があるため、
-     * UIの更新は必ずメインスレッド(runOnUiThread)で行う。
+     * 録音を停止する。
+     * @param discard trueの場合は保存メッセージを出さない（Activity終了時の後始末などで使う）
      */
-    private fun onDoubleTapDetected() {
-        runOnUiThread {
-            binding.statusTextView.text = getString(R.string.state_double_tap)
-            binding.rootLayout.setBackgroundColor(getColor(R.color.background_double_tap))
+    private fun stopRecordingInternal(discard: Boolean) {
+        val recorder = mediaRecorder
+        val savedFile = currentOutputFile
 
-            // 予約済みの「READY表示に戻す」処理があれば一旦キャンセルしてから、
-            // 新しく表示リセットを予約し直す
-            uiHandler.removeCallbacksAndMessages(null)
-            uiHandler.postDelayed({
+        try {
+            recorder?.stop()
+        } catch (e: IllegalStateException) {
+            // 録音時間が短すぎる等で stop() が失敗した場合は、ファイルを破棄扱いにする
+        } finally {
+            recorder?.release()
+            mediaRecorder = null
+        }
+
+        isRecording = false
+        currentOutputFile = null
+        updateStatusDisplay()
+
+        if (!discard && savedFile != null) {
+            Toast.makeText(
+                this,
+                getString(R.string.toast_recording_saved, savedFile.name),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /**
+     * 録音ファイルの保存先を作る。
+     * アプリ専用の外部ストレージ領域（Android/data/アプリのパッケージ名/files/Music/）を使うため、
+     * ストレージへの書き込み権限(WRITE_EXTERNAL_STORAGE)は不要。
+     */
+    private fun createOutputFile(): File {
+        // 外部ストレージが使えない端末状態のときは、アプリ内部ストレージ(filesDir)に保存する
+        val baseDir = getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: filesDir
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
+        }
+        val dateText = SimpleDateFormat(FILE_NAME_DATE_PATTERN, Locale.US).format(Date())
+        val fileName = "${dateText}_recording.m4a"
+        return File(baseDir, fileName)
+    }
+
+    // ------------------------------------------------------------
+    // Text-to-Speech（日付と時刻の読み上げ）
+    // ------------------------------------------------------------
+
+    private fun speakCurrentDateTime() {
+        val tts = textToSpeech
+        if (tts == null || !isTtsReady) {
+            return
+        }
+        val speechText = SimpleDateFormat(SPEECH_DATE_PATTERN, Locale.JAPAN).format(Date())
+        tts.speak(speechText, TextToSpeech.QUEUE_FLUSH, null, "current_datetime")
+    }
+
+    // ------------------------------------------------------------
+    // 画面表示の更新
+    // ------------------------------------------------------------
+
+    private fun updateStatusDisplay() {
+        when {
+            !hasRecordAudioPermission() -> {
+                binding.statusTextView.text = getString(R.string.state_permission_needed)
+                binding.rootLayout.setBackgroundColor(getColor(R.color.background_permission_needed))
+            }
+            isRecording -> {
+                binding.statusTextView.text = getString(R.string.state_recording)
+                binding.rootLayout.setBackgroundColor(getColor(R.color.background_recording))
+            }
+            else -> {
                 binding.statusTextView.text = getString(R.string.state_ready)
                 binding.rootLayout.setBackgroundColor(getColor(R.color.background_ready))
-            }, DISPLAY_RESET_DELAY_MS)
+            }
         }
     }
 

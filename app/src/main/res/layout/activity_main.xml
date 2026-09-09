@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     画面全体のレイアウト。
-    ConstraintLayout の中に、状態を表示する大きな文字(TextView)を1つだけ置く。
+    ConstraintLayout の中に、状態を表示する大きな文字(TextView)と、
+    しきい値調整の参考にするための小さなデバッグ表示(TextView)を置く。
 -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -11,7 +12,7 @@
     android:layout_height="match_parent"
     android:background="@color/background_ready">
 
-    <!-- 現在の状態（READY / DOUBLE TAP など）を大きく表示するテキスト -->
+    <!-- 現在の状態（READY / RECORDING など）を大きく表示するテキスト -->
     <TextView
         android:id="@+id/statusTextView"
         android:layout_width="wrap_content"
@@ -21,6 +22,22 @@
         android:textSize="56sp"
         android:textStyle="bold"
         app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!--
+        しきい値(TAP_THRESHOLD)を調整するときの参考情報を表示する小さなテキスト。
+        「直近の衝撃の強さ」と「現在カウント中のタップ回数」を表示する。
+    -->
+    <TextView
+        android:id="@+id/debugTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="32dp"
+        android:text=""
+        android:textColor="@color/text_on_dark"
+        android:textSize="14sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

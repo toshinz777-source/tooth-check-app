@@ -4,5 +4,10 @@
 
     <!-- 画面に表示する状態文字列 -->
     <string name="state_ready">READY</string>
-    <string name="state_double_tap">DOUBLE TAP</string>
+    <string name="state_recording">RECORDING</string>
+    <string name="state_permission_needed">PERMISSION\nNEEDED</string>
+
+    <string name="toast_permission_denied">マイクの権限が許可されていないため、録音できません</string>
+    <string name="toast_recording_saved">保存しました: %1$s</string>
+    <string name="toast_recording_start_failed">録音を開始できませんでした</string>
 </resources>
